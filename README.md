@@ -21,7 +21,7 @@ CVPR 2024 Oral, Best Paper Award Candidate
 
 </div>
 
-If you find this work or code useful, please cite our [paper](https://arxiv.org/abs/2212.02501) and [give this repo a star](https://github.com/astra-vision/SceneRF/stargazers):
+If you find this work or code useful, please cite our [paper](https://arxiv.org/abs/2312.02158) and [give this repo a star](https://github.com/astra-vision/PaSCo/stargazers):
 ```
 @InProceedings{cao2024pasco,
       title={PaSCo: Urban 3D Panoptic Scene Completion with Uncertainty Awareness}, 
