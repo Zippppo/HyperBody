@@ -5,7 +5,7 @@ Usage:
     python scripts/train_body.py --dataset_root /path/to/data
 
 Example:
-    python scripts/body/train_body.py --dataset_root voxel-output/merged_data --batch_size 2 --lr 1e-4 --max_epochs 100 --exp_name body_unet --n_gpus 2 --precision 16 --base_channels 16
+    python scripts/body/train_body.py --dataset_root Dataset/voxel_data --batch_size 2 --lr 1e-4 --max_epochs 100 --exp_name body_unet --n_gpus 2 --precision 16 --base_channels 16 --log
 """
 
 import argparse
