@@ -5,7 +5,7 @@ Usage:
     python scripts/train_body.py --dataset_root /path/to/data
 
 Example:
-    python scripts/body/train_body.py --dataset_root Dataset/voxel_data --batch_size 2 --lr 1e-4 --max_epochs 100 --exp_name body_unet --n_gpus 2 --precision 16 --base_channels 16 --log
+    python scripts/body/train_body.py --dataset_root Dataset/voxel_data --batch_size 2 --lr 1e-4 --max_epochs 100 --exp_name origin --precision 16 --base_channels 16 --gpuids 0
 """
 
 import argparse
@@ -213,7 +213,9 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=4,
                         help="Number of data loading workers")
     parser.add_argument("--n_gpus", type=int, default=1,
-                        help="Number of GPUs")
+                        help="Number of GPUs (ignored if --gpuids is specified)")
+    parser.add_argument("--gpuids", type=str, default=None,
+                        help="Comma-separated GPU IDs to use (e.g., '0,1' or '2,3')")
     parser.add_argument("--precision", type=str, default="32",
                         choices=["16", "32", "bf16"],
                         help="Training precision")
@@ -336,11 +338,20 @@ def main():
     )
 
     # Setup trainer
+    # Determine GPU devices
+    if args.gpuids is not None:
+        gpu_ids = [int(x) for x in args.gpuids.split(",")]
+        n_devices = len(gpu_ids)
+        devices = gpu_ids
+    else:
+        n_devices = args.n_gpus
+        devices = args.n_gpus if args.n_gpus > 0 else 1
+
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
-        accelerator="gpu" if args.n_gpus > 0 else "cpu",
-        devices=args.n_gpus if args.n_gpus > 0 else 1,
-        strategy="ddp" if args.n_gpus > 1 else "auto",
+        accelerator="gpu" if n_devices > 0 else "cpu",
+        devices=devices,
+        strategy="ddp" if n_devices > 1 else "auto",
         precision=args.precision,
         callbacks=[checkpoint_callback, lr_monitor, training_logger],
         logger=logger,

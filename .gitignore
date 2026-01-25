@@ -100,4 +100,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-ref_articles/
+REF/
+current_plan/
+meru/
