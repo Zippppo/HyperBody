@@ -5,7 +5,7 @@ Usage:
     python scripts/train_body.py --dataset_root /path/to/data
 
 Example:
-    python scripts/body/train_body.py --dataset_root Dataset/voxel_data --batch_size 2 --lr 1e-4 --max_epochs 100 --exp_name origin --precision 16 --base_channels 16 --gpuids 0
+    python scripts/body/train_body.py --dataset_root Dataset/voxel_data --batch_size 2 --lr 1e-4 --max_epochs 200 --exp_name origin --precision 16 --base_channels 16 --gpuids 0
 """
 
 import argparse
