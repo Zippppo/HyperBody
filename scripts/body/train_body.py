@@ -176,13 +176,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train body semantic segmentation")
 
     # Data
-    parser.add_argument("--dataset_root", type=str, required=True,
+    parser.add_argument("--dataset_root", type=str, default="Dataset/voxel_data",
                         help="Path to dataset root directory")
     parser.add_argument("--target_size", type=int, nargs=3, default=[160, 160, 256],
                         help="Target grid size (H W D)")
 
     # Model
-    parser.add_argument("--base_channels", type=int, default=32,
+    parser.add_argument("--base_channels", type=int, default=16,
                         help="Base channel count for UNet")
     parser.add_argument("--use_light_model", action="store_true",
                         help="Use lighter 3-level UNet")
@@ -216,7 +216,7 @@ def parse_args():
                         help="Number of GPUs (ignored if --gpuids is specified)")
     parser.add_argument("--gpuids", type=str, default=None,
                         help="Comma-separated GPU IDs to use (e.g., '0,1' or '2,3')")
-    parser.add_argument("--precision", type=str, default="32",
+    parser.add_argument("--precision", type=str, default="16",
                         choices=["16", "32", "bf16"],
                         help="Training precision")
 
