@@ -29,6 +29,9 @@ class Config:
     weight_decay: float = 1e-5
     grad_clip: float = 1.0
 
+    # AMP
+    use_amp: bool = True
+
     # Loss
     ce_weight: float = 0.5
     dice_weight: float = 0.5
