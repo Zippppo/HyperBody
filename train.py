@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
@@ -306,6 +307,10 @@ def main():
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", factor=cfg.lr_factor, patience=cfg.lr_patience
     )
+
+    # AMP GradScaler (only if use_amp is enabled)
+    scaler = GradScaler() if cfg.use_amp else None
+    logger.info(f"AMP enabled: {cfg.use_amp}")
 
     # Metrics
     metric = DiceMetric(num_classes=cfg.num_classes)
