@@ -347,7 +347,7 @@ def main():
 
         # Train
         train_loss = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, cfg.grad_clip, epoch=epoch
+            model, train_loader, criterion, optimizer, device, cfg.grad_clip, epoch=epoch, scaler=scaler
         )
 
         # Validate
