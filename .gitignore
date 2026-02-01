@@ -11,3 +11,4 @@ merged.zip
 docs/visualizations/
 /runs/
 /checkpoints/
+.worktrees/
