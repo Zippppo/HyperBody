@@ -153,3 +153,22 @@ class DiceMetric:
                 result[key] = dice_per_class[c].item()
 
         return result
+
+    def sync_across_processes(self):
+        """Synchronize accumulators across all distributed processes.
+
+        This method should be called before compute() when using DDP
+        to aggregate metrics from all processes.
+        """
+        import torch.distributed as dist
+
+        if self._intersection is None:
+            return
+
+        if not (dist.is_available() and dist.is_initialized()):
+            return
+
+        # All-reduce sums across all processes
+        dist.all_reduce(self._intersection, op=dist.ReduceOp.SUM)
+        dist.all_reduce(self._pred_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(self._target_sum, op=dist.ReduceOp.SUM)

@@ -54,7 +54,7 @@ def load_checkpoint(
 
     Args:
         path: Path to checkpoint file
-        model: Model to load state into (can be DataParallel or regular model)
+        model: Model to load state into (can be DataParallel, DDP, or regular model)
         optimizer: Optional optimizer to restore state
         scheduler: Optional scheduler to restore state
         device: Device to map checkpoint tensors to
@@ -74,20 +74,20 @@ def load_checkpoint(
     checkpoint = torch.load(path, map_location=device)
 
     # Load model state
-    # Handle both DataParallel and regular models
+    # Handle DataParallel, DDP, and regular models
     model_state_dict = checkpoint["model_state_dict"]
 
-    # Check if model is DataParallel
-    is_model_parallel = isinstance(model, nn.DataParallel)
-    # Check if checkpoint is from DataParallel (keys start with 'module.')
+    # Check if model is wrapped (DataParallel or DDP) - both have 'module' attribute
+    is_model_wrapped = hasattr(model, 'module')
+    # Check if checkpoint is from wrapped model (keys start with 'module.')
     is_checkpoint_parallel = any(key.startswith("module.") for key in model_state_dict.keys())
 
-    if is_model_parallel and not is_checkpoint_parallel:
-        # Model is DataParallel but checkpoint is not
+    if is_model_wrapped and not is_checkpoint_parallel:
+        # Model is wrapped but checkpoint is not
         # Add 'module.' prefix to checkpoint keys
         model_state_dict = {f"module.{k}": v for k, v in model_state_dict.items()}
-    elif not is_model_parallel and is_checkpoint_parallel:
-        # Model is not DataParallel but checkpoint is
+    elif not is_model_wrapped and is_checkpoint_parallel:
+        # Model is not wrapped but checkpoint is
         # Remove 'module.' prefix from checkpoint keys
         model_state_dict = {k.replace("module.", ""): v for k, v in model_state_dict.items()}
 
