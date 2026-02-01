@@ -332,6 +332,12 @@ def main():
         start_epoch, best_dice = load_checkpoint(
             cfg.resume, model, optimizer, scheduler, device=device
         )
+        # Load scaler state if available
+        if scaler is not None:
+            checkpoint = torch.load(cfg.resume, map_location=device)
+            if checkpoint.get("scaler_state_dict") is not None:
+                scaler.load_state_dict(checkpoint["scaler_state_dict"])
+                logger.info("Loaded GradScaler state from checkpoint")
         logger.info(f"Resumed at epoch {start_epoch}, best_dice={best_dice:.4f}")
 
     # TensorBoard writer (only main process)
