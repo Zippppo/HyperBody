@@ -10,3 +10,4 @@ merged.zip
 .vscode/
 docs/visualizations/
 /runs/
+/checkpoints/
