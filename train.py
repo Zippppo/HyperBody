@@ -1,7 +1,9 @@
 import argparse
 import os
 import logging
+import random
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -17,12 +19,23 @@ from utils.metrics import DiceMetric
 from utils.checkpoint import save_checkpoint, load_checkpoint
 
 
+def set_seed(seed: int = 42):
+    """Set random seed for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train 3D U-Net for body segmentation")
     parser.add_argument("--resume", type=str, default="", help="Checkpoint path to resume from")
     parser.add_argument("--batch_size", type=int, default=None, help="Batch size per GPU")
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs")
     parser.add_argument("--gpuids", type=str, default=None, help="GPU IDs (e.g., '0,1')")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     return parser.parse_args()
 
 
@@ -112,6 +125,9 @@ def main():
     args = parse_args()
     cfg = Config()
 
+    # Set random seed for reproducibility
+    set_seed(args.seed)
+
     # Override config with CLI args
     if args.batch_size is not None:
         cfg.batch_size = args.batch_size
@@ -127,6 +143,7 @@ def main():
     logger.info("=" * 60)
     logger.info("Training 3D U-Net with Dense Bottleneck")
     logger.info("=" * 60)
+    logger.info(f"Random seed: {args.seed}")
     logger.info(f"Config: {cfg}")
 
     # Device

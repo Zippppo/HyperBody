@@ -6,15 +6,13 @@ import torch.nn.functional as F
 class DiceLoss(nn.Module):
     """Multi-class Dice loss for 3D segmentation"""
 
-    def __init__(self, smooth: float = 1.0, ignore_index: int = -100):
+    def __init__(self, smooth: float = 1.0):
         """
         Args:
             smooth: Smoothing factor to avoid division by zero
-            ignore_index: Class index to ignore in loss computation
         """
         super().__init__()
         self.smooth = smooth
-        self.ignore_index = ignore_index
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
