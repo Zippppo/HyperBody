@@ -24,7 +24,6 @@ class BodyNet(pl.LightningModule):
         base_channels: Base channel count for UNet
         lr: Learning rate
         weight_decay: Weight decay for optimizer
-        class_weights: Optional tensor of class weights for loss
         ignore_index: Label index to ignore (default 255)
         use_light_model: Use lighter 3-level UNet instead of 4-level
     """
@@ -36,14 +35,13 @@ class BodyNet(pl.LightningModule):
         base_channels=32,
         lr=1e-4,
         weight_decay=0.0,
-        class_weights=None,
         ignore_index=255,
         use_light_model=False,
         warmup_epochs=5,
         max_epochs=100,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["class_weights"])
+        self.save_hyperparameters()
 
         self.n_classes = n_classes
         self.lr = lr
@@ -66,12 +64,6 @@ class BodyNet(pl.LightningModule):
                 base_channels=base_channels,
             )
 
-        # Class weights for loss
-        if class_weights is not None:
-            self.register_buffer("class_weights", torch.tensor(class_weights, dtype=torch.float32))
-        else:
-            self.class_weights = None
-
         # Metrics storage
         self.val_iou_sum = None
         self.val_iou_count = None
@@ -81,9 +73,8 @@ class BodyNet(pl.LightningModule):
         return self.model(x)
 
     def compute_loss(self, logits, labels):
-        """Compute cross-entropy loss with optional class weights."""
+        """Compute cross-entropy loss."""
         criterion = nn.CrossEntropyLoss(
-            weight=self.class_weights,
             ignore_index=self.ignore_index,
         )
         return criterion(logits, labels)
@@ -222,24 +213,6 @@ class BodyNet(pl.LightningModule):
                 "interval": "epoch",
             },
         }
-
-
-def compute_class_weights(class_frequencies, alpha=1.0):
-    """
-    Compute class weights from frequencies.
-
-    Args:
-        class_frequencies: Array of class frequencies
-        alpha: Weighting factor (higher = more balanced)
-
-    Returns:
-        weights: Normalized class weights
-    """
-    freq = np.array(class_frequencies)
-    freq = np.clip(freq, 1, None)  # Avoid division by zero
-    weights = 1.0 / (freq ** alpha)
-    weights = weights / weights.sum() * len(weights)  # Normalize
-    return weights
 
 
 if __name__ == "__main__":

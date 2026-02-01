@@ -27,7 +27,6 @@ class BodyDataModule(pl.LightningDataModule):
         batch_size: Batch size for dataloaders
         num_workers: Number of dataloader workers
         target_size: Target grid size (H, W, D)
-        data_aug: Whether to apply data augmentation during training
     """
 
     def __init__(
@@ -36,14 +35,12 @@ class BodyDataModule(pl.LightningDataModule):
         batch_size=2,
         num_workers=4,
         target_size=(160, 160, 256),
-        data_aug=False,
     ):
         super().__init__()
         self.root = root
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.target_size = target_size
-        self.data_aug = data_aug
 
         self.train_ds = None
         self.val_ds = None
@@ -56,13 +53,11 @@ class BodyDataModule(pl.LightningDataModule):
                 root=self.root,
                 split="train",
                 target_size=self.target_size,
-                data_aug=self.data_aug,
             )
             self.val_ds = BodyDataset(
                 root=self.root,
                 split="val",
                 target_size=self.target_size,
-                data_aug=False,  # No augmentation for validation
             )
 
         if stage == "test" or stage is None:
@@ -70,7 +65,6 @@ class BodyDataModule(pl.LightningDataModule):
                 root=self.root,
                 split="test",
                 target_size=self.target_size,
-                data_aug=False,
             )
 
     def train_dataloader(self):

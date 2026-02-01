@@ -27,15 +27,13 @@ class BodyDataset(Dataset):
         root: Dataset root directory
         split: "train", "val", or "test"
         target_size: Target grid size (H, W, D) for padding
-        data_aug: Whether to apply data augmentation
     """
 
-    def __init__(self, root, split="train", target_size=(160, 160, 256), data_aug=False):
+    def __init__(self, root, split="train", target_size=(160, 160, 256)):
         super().__init__()
         self.root = Path(root)
         self.split = split
         self.target_size = target_size
-        self.data_aug = data_aug
 
         # Read split file
         split_file = self.root / f"{split}.txt"
@@ -51,7 +49,7 @@ class BodyDataset(Dataset):
             self.data_dir = self.root
 
         print(f"[BodyDataset] split={split}, samples={len(self.sample_ids)}, "
-              f"target_size={target_size}, data_aug={data_aug}")
+              f"target_size={target_size}")
 
     def __len__(self):
         return len(self.sample_ids)
@@ -73,10 +71,6 @@ class BodyDataset(Dataset):
         # Create binary occupancy grid (skin surface)
         occupancy = np.zeros(voxel_labels.shape, dtype=np.float32)
         occupancy[pc_voxel[:, 0], pc_voxel[:, 1], pc_voxel[:, 2]] = 1.0
-
-        # Data augmentation
-        if self.data_aug:
-            occupancy, voxel_labels = self._augment(occupancy, voxel_labels)
 
         # Pad to target size
         occupancy, voxel_labels = self._pad_to_target(occupancy, voxel_labels)
@@ -108,16 +102,6 @@ class BodyDataset(Dataset):
 
         return occupancy, labels
 
-    def _augment(self, occupancy, labels):
-        """Apply data augmentation (random flips along spatial axes)."""
-        # Random flip along each axis
-        for axis in range(3):
-            if np.random.rand() > 0.5:
-                occupancy = np.flip(occupancy, axis=axis).copy()
-                labels = np.flip(labels, axis=axis).copy()
-
-        return occupancy, labels
-
 
 class BodyDatasetFromList(Dataset):
     """
@@ -127,15 +111,13 @@ class BodyDatasetFromList(Dataset):
         root: Dataset root directory
         sample_ids: List of sample identifiers
         target_size: Target grid size (H, W, D)
-        data_aug: Whether to apply data augmentation
     """
 
-    def __init__(self, root, sample_ids, target_size=(160, 160, 256), data_aug=False):
+    def __init__(self, root, sample_ids, target_size=(160, 160, 256)):
         super().__init__()
         self.root = Path(root)
         self.sample_ids = sample_ids
         self.target_size = target_size
-        self.data_aug = data_aug
 
         # Determine data directory
         self.data_dir = self.root / "data"

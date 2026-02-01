@@ -24,7 +24,6 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from pasco.data.body import BodyDataModule, N_CLASSES
-from pasco.data.body.params import compute_class_frequencies, compute_class_weights
 from pasco.models.body_net import BodyNet
 
 
@@ -105,14 +104,13 @@ class TrainingInfoLogger(Callback):
             json.dump(log_data, f, indent=2)
 
 
-def save_training_config(args, exp_dir, class_weights=None, model_params=None):
+def save_training_config(args, exp_dir, model_params=None):
     """
     Save training configuration to JSON file.
 
     Args:
         args: Training arguments
         exp_dir: Experiment directory
-        class_weights: Optional class weights array
         model_params: Optional model parameter count
     """
     config = {
@@ -126,7 +124,6 @@ def save_training_config(args, exp_dir, class_weights=None, model_params=None):
             "target_size": args.target_size,
             "batch_size": args.batch_size,
             "num_workers": args.num_workers,
-            "data_aug": args.data_aug,
         },
         "model": {
             "n_classes": N_CLASSES,
@@ -143,25 +140,12 @@ def save_training_config(args, exp_dir, class_weights=None, model_params=None):
             "precision": args.precision,
             "seed": args.seed,
         },
-        "loss": {
-            "use_class_weights": args.use_class_weights,
-            "weight_alpha": args.weight_alpha if args.use_class_weights else None,
-        },
         "system": {
             "pytorch_version": torch.__version__,
             "cuda_available": torch.cuda.is_available(),
             "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
         }
     }
-
-    # Add class weights statistics if provided
-    if class_weights is not None:
-        config["loss"]["class_weights_stats"] = {
-            "min": float(class_weights.min()),
-            "max": float(class_weights.max()),
-            "mean": float(class_weights.mean()),
-            "std": float(class_weights.std()),
-        }
 
     # Save config
     config_path = Path(exp_dir) / "training_config.json"
@@ -198,16 +182,6 @@ def parse_args():
                         help="Maximum training epochs")
     parser.add_argument("--warmup_epochs", type=int, default=5,
                         help="Warmup epochs")
-
-    # Loss
-    parser.add_argument("--use_class_weights", action="store_true",
-                        help="Use class-weighted loss")
-    parser.add_argument("--weight_alpha", type=float, default=0.5,
-                        help="Class weight exponent")
-
-    # Data augmentation
-    parser.add_argument("--data_aug", action="store_true",
-                        help="Enable data augmentation")
 
     # System
     parser.add_argument("--num_workers", type=int, default=4,
@@ -248,10 +222,6 @@ def main():
         f"lr{args.lr}_"
         f"ch{args.base_channels}"
     )
-    if args.use_class_weights:
-        exp_name += f"_cw{args.weight_alpha}"
-    if args.data_aug:
-        exp_name += "_aug"
     if args.use_light_model:
         exp_name += "_light"
 
@@ -271,20 +241,11 @@ def main():
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         target_size=tuple(args.target_size),
-        data_aug=args.data_aug,
     )
     dm.setup("fit")
 
     print(f"Train samples: {len(dm.train_ds)}")
     print(f"Val samples: {len(dm.val_ds)}")
-
-    # Compute class weights if requested
-    class_weights = None
-    if args.use_class_weights:
-        print("\nComputing class frequencies...")
-        frequencies = compute_class_frequencies(args.dataset_root, split="train")
-        class_weights = compute_class_weights(frequencies, alpha=args.weight_alpha)
-        print(f"Class weights - min: {class_weights.min():.3f}, max: {class_weights.max():.3f}, mean: {class_weights.mean():.3f}")
 
     # Create model
     print("\nCreating model...")
@@ -294,7 +255,6 @@ def main():
         base_channels=args.base_channels,
         lr=args.lr,
         weight_decay=args.weight_decay,
-        class_weights=class_weights,
         use_light_model=args.use_light_model,
         warmup_epochs=args.warmup_epochs,
         max_epochs=args.max_epochs,
@@ -311,7 +271,6 @@ def main():
     save_training_config(
         args=args,
         exp_dir=exp_dir,
-        class_weights=class_weights,
         model_params=total_params,
     )
 

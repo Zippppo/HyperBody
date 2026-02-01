@@ -2,3 +2,8 @@
 /.claude/
 /logs/
 /current_plan/
+__pycache__/
+*.pyc
+*.pyo
+model_eval_res/
+merged.zip
