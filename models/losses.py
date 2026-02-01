@@ -25,6 +25,9 @@ class DiceLoss(nn.Module):
         """
         num_classes = logits.shape[1]
 
+        # Force float32 for numerical stability in AMP
+        logits = logits.float()
+
         # Softmax to get probabilities
         probs = F.softmax(logits, dim=1)  # (B, C, D, H, W)
 
