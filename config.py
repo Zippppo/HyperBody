@@ -9,7 +9,7 @@ class Config:
     split_file: str = "Dataset/dataset_split.json"
     num_classes: int = 70
     voxel_size: float = 4.0
-    volume_size: Tuple[int, int, int] = (128, 96, 256)  # X, Y, Z
+    volume_size: Tuple[int, int, int] = (144, 128, 268)  # X, Y, Z
 
     # Model
     in_channels: int = 1

@@ -94,6 +94,7 @@ def compute_class_weights(
     num_classes: int = 70,
     num_samples: int = 100,
     method: str = "inverse_sqrt",
+    cache_path: str = None,
 ) -> torch.Tensor:
     """
     Compute per-class weights from dataset samples.
@@ -103,11 +104,25 @@ def compute_class_weights(
         num_classes: Number of segmentation classes
         num_samples: Number of samples to use for weight computation
         method: Weight computation method ('inverse_sqrt' or 'inverse')
+        cache_path: Path to cache the weights. If provided and file exists,
+                    loads weights from cache instead of computing.
 
     Returns:
         (num_classes,) tensor of normalized class weights
     """
+    import os
     import random
+
+    # Try to load from cache
+    if cache_path and os.path.exists(cache_path):
+        cached = torch.load(cache_path, weights_only=True)
+        # Validate cached weights match current config
+        if (
+            cached.get("num_classes") == num_classes
+            and cached.get("num_samples") == num_samples
+            and cached.get("method") == method
+        ):
+            return cached["weights"]
 
     # Sample indices
     indices = random.sample(range(len(dataset)), min(num_samples, len(dataset)))
@@ -138,5 +153,19 @@ def compute_class_weights(
 
     # Normalize weights to sum to num_classes
     weights = weights / weights.sum() * num_classes
+    weights = weights.float()
 
-    return weights.float()
+    # Save to cache
+    if cache_path:
+        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+        torch.save(
+            {
+                "weights": weights,
+                "num_classes": num_classes,
+                "num_samples": num_samples,
+                "method": method,
+            },
+            cache_path,
+        )
+
+    return weights

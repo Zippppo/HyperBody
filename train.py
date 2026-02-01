@@ -173,9 +173,15 @@ def main():
         pin_memory=True,
     )
 
-    # Compute class weights
-    logger.info("Computing class weights from 100 samples...")
-    class_weights = compute_class_weights(train_dataset, cfg.num_classes, num_samples=100)
+    # Compute class weights (with caching)
+    class_weights_cache = os.path.join(cfg.checkpoint_dir, "class_weights.pt")
+    if os.path.exists(class_weights_cache):
+        logger.info(f"Loading cached class weights from {class_weights_cache}")
+    else:
+        logger.info("Computing class weights from 100 samples (will be cached)...")
+    class_weights = compute_class_weights(
+        train_dataset, cfg.num_classes, num_samples=100, cache_path=class_weights_cache
+    )
     class_weights = class_weights.to(device)
     logger.info(f"Class weights range: [{class_weights.min():.4f}, {class_weights.max():.4f}]")
 

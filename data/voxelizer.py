@@ -37,16 +37,18 @@ def pad_labels(
     voxel_labels: np.ndarray,
     volume_size: tuple,
 ) -> np.ndarray:
-    """Pad voxel labels to fixed volume size with zeros.
+    """Crop and/or pad voxel labels to fixed volume size.
 
     Args:
         voxel_labels: (X, Y, Z) uint8, variable size
         volume_size: (X, Y, Z) target shape
 
     Returns:
-        Padded labels, shape=volume_size, dtype=int64
+        Cropped/padded labels, shape=volume_size, dtype=int64
     """
     padded = np.zeros(volume_size, dtype=np.int64)
     x, y, z = voxel_labels.shape
-    padded[:x, :y, :z] = voxel_labels.astype(np.int64)
+    # 取输入和目标的最小值，实现裁剪
+    cx, cy, cz = min(x, volume_size[0]), min(y, volume_size[1]), min(z, volume_size[2])
+    padded[:cx, :cy, :cz] = voxel_labels[:cx, :cy, :cz].astype(np.int64)
     return padded
