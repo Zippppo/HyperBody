@@ -114,7 +114,7 @@ def setup_logging(log_dir: str, is_main: bool = True):
     return logging.getLogger(__name__)
 
 
-def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoch=0):
+def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoch=0, scaler=None):
     """Train for one epoch.
 
     Args:
@@ -125,6 +125,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoc
         device: Device to use
         grad_clip: Gradient clipping value (0 to disable)
         epoch: Current epoch number (used for DistributedSampler shuffling)
+        scaler: Optional GradScaler for AMP training (None to disable AMP)
 
     Returns:
         Average training loss for the epoch.
@@ -146,15 +147,23 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoc
 
         optimizer.zero_grad()
 
-        logits = model(inputs)
-        loss = criterion(logits, targets)
-
-        loss.backward()
-
-        if grad_clip > 0:
-            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-
-        optimizer.step()
+        if scaler is not None:
+            with autocast(device_type='cuda'):
+                logits = model(inputs)
+                loss = criterion(logits, targets)
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            logits = model(inputs)
+            loss = criterion(logits, targets)
+            loss.backward()
+            if grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
 
         total_loss += loss.item()
         num_batches += 1
