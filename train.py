@@ -371,6 +371,10 @@ def main():
             writer.add_scalar("Dice/mean", mean_dice, epoch)
             writer.add_scalar("LR", current_lr, epoch)
 
+            # Log AMP loss scale
+            if scaler is not None:
+                writer.add_scalar("AMP/loss_scale", scaler.get_scale(), epoch)
+
             # Log key organ Dice scores (if present)
             # These indices depend on the dataset label mapping
             key_organs = {
