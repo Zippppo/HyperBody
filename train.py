@@ -407,6 +407,7 @@ def main():
                 "train_loss": train_loss,
                 "val_loss": val_loss,
                 "mean_dice": mean_dice,
+                "scaler_state_dict": scaler.state_dict() if scaler is not None else None,
             }
 
             # Save latest (every epoch)
