@@ -23,7 +23,7 @@ class Config:
 
     # Training
     batch_size: int = 4  # per GPU
-    num_workers: int = 4
+    num_workers: int = 0
     epochs: int = 120
     lr: float = 1e-3
     weight_decay: float = 1e-5
@@ -38,7 +38,7 @@ class Config:
     lr_factor: float = 0.5
 
     # Checkpoint
-    checkpoint_dir: str = "checkpoints"
+    checkpoint_dir: str = "checkpoints/test_val_speed"
     save_every: int = 10
     log_dir: str = "runs"
 
