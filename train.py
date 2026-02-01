@@ -148,7 +148,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoc
         optimizer.zero_grad()
 
         if scaler is not None:
-            with autocast(device_type='cuda'):
+            with autocast():
                 logits = model(inputs)
                 loss = criterion(logits, targets)
             scaler.scale(loss).backward()

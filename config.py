@@ -41,7 +41,7 @@ class Config:
     lr_factor: float = 0.5
 
     # Checkpoint
-    checkpoint_dir: str = "checkpoints/test_val_speed"
+    checkpoint_dir: str = "checkpoints"
     save_every: int = 10
     log_dir: str = "runs"
 
