@@ -6,6 +6,7 @@ from models.hyperbolic.lorentz_ops import (
     distance_to_origin,
     lorentz_to_poincare,
 )
+from models.hyperbolic.label_embedding import LorentzLabelEmbedding
 
 __all__ = [
     "exp_map0",
@@ -14,4 +15,5 @@ __all__ = [
     "pairwise_dist",
     "distance_to_origin",
     "lorentz_to_poincare",
+    "LorentzLabelEmbedding",
 ]
