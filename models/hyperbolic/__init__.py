@@ -8,6 +8,7 @@ from models.hyperbolic.lorentz_ops import (
 )
 from models.hyperbolic.label_embedding import LorentzLabelEmbedding
 from models.hyperbolic.projection_head import LorentzProjectionHead
+from models.hyperbolic.lorentz_loss import LorentzRankingLoss
 
 __all__ = [
     "exp_map0",
@@ -18,4 +19,5 @@ __all__ = [
     "lorentz_to_poincare",
     "LorentzLabelEmbedding",
     "LorentzProjectionHead",
+    "LorentzRankingLoss",
 ]
