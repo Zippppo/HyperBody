@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import logging
 import random
@@ -18,8 +19,10 @@ from tqdm import tqdm
 
 from config import Config
 from data.dataset import HyperBodyDataset
-from models.unet3d import UNet3D
+from data.organ_hierarchy import load_organ_hierarchy
+from models.body_net import BodyNet
 from models.losses import CombinedLoss, compute_class_weights
+from models.hyperbolic.lorentz_loss import LorentzRankingLoss
 from utils.metrics import DiceMetric
 from utils.checkpoint import save_checkpoint, load_checkpoint
 
@@ -115,13 +118,15 @@ def setup_logging(log_dir: str, is_main: bool = True):
     return logging.getLogger(__name__)
 
 
-def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoch=0, scaler=None):
+def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, optimizer, device, grad_clip, epoch=0, scaler=None):
     """Train for one epoch.
 
     Args:
-        model: The model to train
+        model: The model to train (BodyNet)
         loader: DataLoader for training data
-        criterion: Loss function
+        seg_criterion: Segmentation loss function (CombinedLoss)
+        hyp_criterion: Hyperbolic loss function (LorentzRankingLoss)
+        hyp_weight: Weight for hyperbolic loss
         optimizer: Optimizer
         device: Device to use
         grad_clip: Gradient clipping value (0 to disable)
@@ -129,7 +134,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoc
         scaler: Optional GradScaler for AMP training (None to disable AMP)
 
     Returns:
-        Average training loss for the epoch.
+        Tuple of (avg_total_loss, avg_seg_loss, avg_hyp_loss)
     """
     model.train()
 
@@ -137,7 +142,9 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoc
     if hasattr(loader.sampler, 'set_epoch'):
         loader.sampler.set_epoch(epoch)
 
-    total_loss = 0.0
+    total_loss_sum = 0.0
+    seg_loss_sum = 0.0
+    hyp_loss_sum = 0.0
     num_batches = 0
 
     # Only show progress bar on main process
@@ -150,39 +157,50 @@ def train_one_epoch(model, loader, criterion, optimizer, device, grad_clip, epoc
 
         if scaler is not None:
             with autocast():
-                logits = model(inputs)
-                loss = criterion(logits, targets)
-            scaler.scale(loss).backward()
+                logits, voxel_emb, label_emb = model(inputs)
+                seg_loss = seg_criterion(logits, targets)
+                hyp_loss = hyp_criterion(voxel_emb, targets, label_emb)
+                total_loss = seg_loss + hyp_weight * hyp_loss
+
+            scaler.scale(total_loss).backward()
             scaler.unscale_(optimizer)
             if grad_clip > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             scaler.step(optimizer)
             scaler.update()
         else:
-            logits = model(inputs)
-            loss = criterion(logits, targets)
-            loss.backward()
+            logits, voxel_emb, label_emb = model(inputs)
+            seg_loss = seg_criterion(logits, targets)
+            hyp_loss = hyp_criterion(voxel_emb, targets, label_emb)
+            total_loss = seg_loss + hyp_weight * hyp_loss
+
+            total_loss.backward()
             if grad_clip > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
 
-        total_loss += loss.item()
+        total_loss_sum += total_loss.item()
+        seg_loss_sum += seg_loss.item()
+        hyp_loss_sum += hyp_loss.item()
         num_batches += 1
-        pbar.set_postfix(loss=f"{loss.item():.4f}")
+        pbar.set_postfix(loss=f"{total_loss.item():.4f}", seg=f"{seg_loss.item():.4f}", hyp=f"{hyp_loss.item():.4f}")
 
-    return total_loss / max(num_batches, 1)
+    n = max(num_batches, 1)
+    return total_loss_sum / n, seg_loss_sum / n, hyp_loss_sum / n
 
 
 @torch.no_grad()
-def validate(model, loader, criterion, metric, device):
+def validate(model, loader, seg_criterion, hyp_criterion, hyp_weight, metric, device):
     """Validate and compute metrics.
 
     Returns:
-        Tuple of (val_loss, dice_per_class, mean_dice).
+        Tuple of (val_total_loss, val_seg_loss, val_hyp_loss, dice_per_class, mean_dice).
     """
     model.eval()
     metric.reset()
-    total_loss = 0.0
+    total_loss_sum = 0.0
+    seg_loss_sum = 0.0
+    hyp_loss_sum = 0.0
     num_batches = 0
 
     # Only show progress bar on main process
@@ -191,23 +209,27 @@ def validate(model, loader, criterion, metric, device):
         inputs = inputs.to(device)
         targets = targets.to(device)
 
-        logits = model(inputs)
-        loss = criterion(logits, targets)
+        logits, voxel_emb, label_emb = model(inputs)
+        seg_loss = seg_criterion(logits, targets)
+        hyp_loss = hyp_criterion(voxel_emb, targets, label_emb)
+        total_loss = seg_loss + hyp_weight * hyp_loss
 
-        total_loss += loss.item()
+        total_loss_sum += total_loss.item()
+        seg_loss_sum += seg_loss.item()
+        hyp_loss_sum += hyp_loss.item()
         num_batches += 1
 
         metric.update(logits, targets)
-        pbar.set_postfix(loss=f"{loss.item():.4f}")
+        pbar.set_postfix(loss=f"{total_loss.item():.4f}")
 
     # Sync metrics across processes before compute
     if is_distributed():
         metric.sync_across_processes()
 
-    val_loss = total_loss / max(num_batches, 1)
+    n = max(num_batches, 1)
     dice_per_class, mean_dice, _ = metric.compute()
 
-    return val_loss, dice_per_class, mean_dice
+    return total_loss_sum / n, seg_loss_sum / n, hyp_loss_sum / n, dice_per_class, mean_dice
 
 
 def main():
@@ -289,15 +311,25 @@ def main():
     class_weights = class_weights.to(device)
     logger.info(f"Class weights range: [{class_weights.min():.4f}, {class_weights.max():.4f}]")
 
+    # Load organ hierarchy for hyperbolic embeddings
+    with open(cfg.dataset_info_file) as f:
+        class_names = json.load(f)["class_names"]
+    class_depths = load_organ_hierarchy(cfg.tree_file, class_names)
+
     # Model
     logger.info("Creating model...")
-    model = UNet3D(
+    model = BodyNet(
         in_channels=cfg.in_channels,
         num_classes=cfg.num_classes,
         base_channels=cfg.base_channels,
         growth_rate=cfg.growth_rate,
         dense_layers=cfg.dense_layers,
         bn_size=cfg.bn_size,
+        embed_dim=cfg.hyp_embed_dim,
+        curv=cfg.hyp_curv,
+        class_depths=class_depths,
+        min_radius=cfg.hyp_min_radius,
+        max_radius=cfg.hyp_max_radius,
     )
 
     num_params = sum(p.numel() for p in model.parameters())
@@ -310,13 +342,22 @@ def main():
         model = DDP(model, device_ids=[local_rank])
         logger.info(f"Using DistributedDataParallel on {get_world_size()} GPUs")
 
-    # Loss, optimizer, scheduler
+    # Segmentation loss, optimizer, scheduler
     criterion = CombinedLoss(
         num_classes=cfg.num_classes,
         ce_weight=cfg.ce_weight,
         dice_weight=cfg.dice_weight,
         class_weights=class_weights,
     )
+
+    # Hyperbolic ranking loss
+    hyp_criterion = LorentzRankingLoss(
+        margin=cfg.hyp_margin,
+        curv=cfg.hyp_curv,
+        num_samples_per_class=cfg.hyp_samples_per_class,
+        num_negatives=cfg.hyp_num_negatives,
+    )
+
     optimizer = optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", factor=cfg.lr_factor, patience=cfg.lr_patience
@@ -357,13 +398,14 @@ def main():
         logger.info(f"Epoch [{epoch + 1}/{cfg.epochs}]  LR: {current_lr:.6f}")
 
         # Train
-        train_loss = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, cfg.grad_clip, epoch=epoch, scaler=scaler
+        train_total, train_seg, train_hyp = train_one_epoch(
+            model, train_loader, criterion, hyp_criterion, cfg.hyp_weight,
+            optimizer, device, cfg.grad_clip, epoch=epoch, scaler=scaler
         )
 
         # Validate
-        val_loss, dice_per_class, mean_dice = validate(
-            model, val_loader, criterion, metric, device
+        val_total, val_seg, val_hyp, dice_per_class, mean_dice = validate(
+            model, val_loader, criterion, hyp_criterion, cfg.hyp_weight, metric, device
         )
 
         # Update scheduler
@@ -371,8 +413,12 @@ def main():
 
         # Log to TensorBoard (only main process)
         if writer:
-            writer.add_scalar("Loss/train", train_loss, epoch)
-            writer.add_scalar("Loss/val", val_loss, epoch)
+            writer.add_scalar("Loss/train_total", train_total, epoch)
+            writer.add_scalar("Loss/train_seg", train_seg, epoch)
+            writer.add_scalar("Loss/train_hyp", train_hyp, epoch)
+            writer.add_scalar("Loss/val_total", val_total, epoch)
+            writer.add_scalar("Loss/val_seg", val_seg, epoch)
+            writer.add_scalar("Loss/val_hyp", val_hyp, epoch)
             writer.add_scalar("Dice/mean", mean_dice, epoch)
             writer.add_scalar("LR", current_lr, epoch)
 
@@ -399,8 +445,9 @@ def main():
 
         # Log epoch summary
         logger.info(
-            f"  Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | "
-            f"Mean Dice: {mean_dice:.4f} | Best Dice: {best_dice:.4f}"
+            f"  Train: total={train_total:.4f} seg={train_seg:.4f} hyp={train_hyp:.4f} | "
+            f"Val: total={val_total:.4f} seg={val_seg:.4f} hyp={val_hyp:.4f} | "
+            f"Dice: {mean_dice:.4f} (best: {best_dice:.4f})"
             f"{' *' if is_best else ''}"
         )
 
@@ -419,8 +466,8 @@ def main():
                 "optimizer_state_dict": optimizer.state_dict(),
                 "scheduler_state_dict": scheduler.state_dict(),
                 "best_dice": best_dice,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
+                "train_loss": train_total,
+                "val_loss": val_total,
                 "mean_dice": mean_dice,
                 "scaler_state_dict": scaler.state_dict() if scaler is not None else None,
             }
