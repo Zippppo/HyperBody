@@ -39,6 +39,8 @@ class BodyNet(nn.Module):
         class_depths: Optional[Dict[int, int]] = None,
         min_radius: float = 0.1,
         max_radius: float = 2.0,
+        direction_mode: str = "random",
+        text_embedding_path: Optional[str] = None,
     ):
         """
         Args:
@@ -53,6 +55,8 @@ class BodyNet(nn.Module):
             class_depths: Dict mapping class_idx -> hierarchy depth
             min_radius: Min tangent norm for label embedding init
             max_radius: Max tangent norm for label embedding init
+            direction_mode: "random" or "semantic" for label embedding init
+            text_embedding_path: Path to text embeddings (required for semantic mode)
         """
         super().__init__()
 
@@ -81,6 +85,8 @@ class BodyNet(nn.Module):
             class_depths=class_depths,
             min_radius=min_radius,
             max_radius=max_radius,
+            direction_mode=direction_mode,
+            text_embedding_path=text_embedding_path,
         )
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:

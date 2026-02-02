@@ -29,6 +29,8 @@ hyp_samples_per_class: 64
 hyp_num_negatives: 8
 hyp_min_radius: 0.1
 hyp_max_radius: 2.0
+hyp_direction_mode: "random"  # "random" or "semantic"
+hyp_text_embedding_path: "Dataset/text_embeddings/sat_label_embeddings.pt"
 
 # Training
 batch_size: 1

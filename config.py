@@ -33,6 +33,8 @@ class Config:
     hyp_num_negatives: int = 8    # Negative classes per anchor
     hyp_min_radius: float = 0.1   # Shallow organ init norm
     hyp_max_radius: float = 2.0   # Deep organ init norm
+    hyp_direction_mode: str = "random"  # "random" or "semantic"
+    hyp_text_embedding_path: str = "Dataset/text_embeddings/sat_label_embeddings.pt"
 
     # Training
     batch_size: int = 1  # per GPU
