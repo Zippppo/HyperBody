@@ -1,0 +1,61 @@
+# Configuration restored from checkpoints/best.pth
+# This model was trained for 28 epochs, achieving best_dice=0.358
+
+# Data
+data_dir: "Dataset/voxel_data"
+split_file: "Dataset/dataset_split.json"
+tree_file: "Dataset/tree.json"
+dataset_info_file: "Dataset/dataset_info.json"
+num_classes: 70
+voxel_size: 4.0
+volume_size: [144, 128, 268]  # X, Y, Z
+
+# Model
+in_channels: 1
+base_channels: 32
+num_levels: 4
+
+# Dense Bottleneck
+growth_rate: 32
+dense_layers: 4
+bn_size: 4
+
+# Hyperbolic (not used in this model - no hyperbolic layers found)
+hyp_embed_dim: 32
+hyp_curv: 1.0
+hyp_weight: 0.0  # disabled
+hyp_margin: 0.1
+hyp_samples_per_class: 64
+hyp_num_negatives: 8
+hyp_min_radius: 0.1
+hyp_max_radius: 2.0
+
+# Training
+batch_size: 1
+num_workers: 0
+epochs: 120
+lr: 0.001
+weight_decay: 0.00001
+grad_clip: 1.0
+
+# AMP
+use_amp: true
+
+# Loss
+ce_weight: 0.5
+dice_weight: 0.5
+
+# LR scheduler
+lr_patience: 10
+lr_factor: 0.5
+
+# Checkpoint
+checkpoint_dir: "checkpoints/best_model"
+save_every: 10
+log_dir: "runs/best_model"
+
+# GPU
+gpu_ids: [0, 1]
+
+# Resume (set to checkpoint path to continue training)
+resume: "checkpoints/best.pth"

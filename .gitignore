@@ -1,7 +1,7 @@
 /Dataset/
 /.claude/
 /logs/
-/current_plan/
+/current_plan
 __pycache__/
 *.pyc
 *.pyo
@@ -12,3 +12,6 @@ docs/visualizations/
 /runs/
 /checkpoints/
 .worktrees/
+/eval/pred
+/eval/results
+/docs/
