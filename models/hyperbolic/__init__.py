@@ -7,6 +7,7 @@ from models.hyperbolic.lorentz_ops import (
     lorentz_to_poincare,
 )
 from models.hyperbolic.label_embedding import LorentzLabelEmbedding
+from models.hyperbolic.projection_head import LorentzProjectionHead
 
 __all__ = [
     "exp_map0",
@@ -16,4 +17,5 @@ __all__ = [
     "distance_to_origin",
     "lorentz_to_poincare",
     "LorentzLabelEmbedding",
+    "LorentzProjectionHead",
 ]
