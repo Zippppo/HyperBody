@@ -105,29 +105,33 @@ class UNet3D(nn.Module):
         # Final output
         self.final = nn.Conv3d(c1, num_classes, kernel_size=1)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         """
         Args:
-            x: Input tensor of shape (B, 1, 128, 96, 256)
+            x: Input tensor of shape (B, 1, H, W, D)
+            return_features: If True, return (logits, decoder_features)
 
         Returns:
-            Output tensor of shape (B, 70, 128, 96, 256)
+            If return_features=False: logits of shape (B, num_classes, H, W, D)
+            If return_features=True: (logits, d2) where d2 is (B, base_channels, H, W, D)
         """
         # Encoder path with skip connections
-        e1 = self.enc1(x)   # (B, 32, 128, 96, 256)
-        e2 = self.enc2(e1)  # (B, 64, 64, 48, 128)
-        e3 = self.enc3(e2)  # (B, 128, 32, 24, 64)
-        e4 = self.enc4(e3)  # (B, 256, 16, 12, 32)
+        e1 = self.enc1(x)   # (B, 32, H, W, D)
+        e2 = self.enc2(e1)  # (B, 64, H/2, W/2, D/2)
+        e3 = self.enc3(e2)  # (B, 128, H/4, W/4, D/4)
+        e4 = self.enc4(e3)  # (B, 256, H/8, W/8, D/8)
 
         # Dense Bottleneck
-        b = self.bottleneck(e4)  # (B, 384, 16, 12, 32)
+        b = self.bottleneck(e4)  # (B, 384, H/8, W/8, D/8)
 
         # Decoder path with skip connections
-        d4 = self.dec4(b, e3)   # (B, 128, 32, 24, 64)
-        d3 = self.dec3(d4, e2)  # (B, 64, 64, 48, 128)
-        d2 = self.dec2(d3, e1)  # (B, 32, 128, 96, 256)
+        d4 = self.dec4(b, e3)   # (B, 128, H/4, W/4, D/4)
+        d3 = self.dec3(d4, e2)  # (B, 64, H/2, W/2, D/2)
+        d2 = self.dec2(d3, e1)  # (B, 32, H, W, D)
 
         # Final output
-        out = self.final(d2)  # (B, 70, 128, 96, 256)
+        out = self.final(d2)  # (B, num_classes, H, W, D)
 
+        if return_features:
+            return out, d2
         return out
