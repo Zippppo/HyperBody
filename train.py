@@ -2,6 +2,7 @@ import argparse
 import os
 import logging
 import random
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -230,8 +231,12 @@ def main():
     # Set random seed for reproducibility
     set_seed(args.seed)
 
+    # Create timestamped log directory for this run
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_log_dir = os.path.join(cfg.log_dir, timestamp)
+
     # Setup logging (only main process logs)
-    logger = setup_logging(cfg.log_dir, is_main=is_main_process())
+    logger = setup_logging(run_log_dir, is_main=is_main_process())
     logger.info("=" * 60)
     logger.info("Training 3D U-Net with Dense Bottleneck")
     logger.info("=" * 60)
@@ -341,7 +346,7 @@ def main():
         logger.info(f"Resumed at epoch {start_epoch}, best_dice={best_dice:.4f}")
 
     # TensorBoard writer (only main process)
-    writer = SummaryWriter(log_dir=cfg.log_dir) if is_main_process() else None
+    writer = SummaryWriter(log_dir=run_log_dir) if is_main_process() else None
 
     # Training loop
     logger.info(f"Starting training from epoch {start_epoch} to {cfg.epochs}")
