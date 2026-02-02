@@ -15,7 +15,7 @@ Add Lorentz (hyperboloid) model hyperbolic embeddings to HyperBody as an **auxil
 | Class exclusion | None (all 70 classes) | Class 0 (inside_body_empty) is valid |
 | Loss weight | hyp_weight=0.05 | Additive, CE/Dice unchanged at 0.5/0.5 |
 | Triplet margin | 0.1 | Standard value |
-| Sampling | Random, 64 voxels per class | Simple MVP, hard mining later |
+| Sampling | Random, 64 voxels per class, 8 negatives per anchor | Configurable num_negatives |
 | Curvature | Fixed curv=1.0 | Not learnable in MVP |
 | Distance fn | pointwise_dist (O(K)) | NOT pairwise_dist (O(K^2)) for loss |
 
@@ -133,7 +133,26 @@ class LorentzLabelEmbedding(nn.Module):
         return exp_map0(self.tangent_embeddings, self.curv)
 ```
 
-Initialization: `tangent_norm = min_radius + (max_radius - min_radius) * (depth - min_depth) / (max_depth - min_depth)`
+**Initialization formula (random direction + depth-based norm):**
+```python
+def _init_embedding_by_depth(depth, min_depth, max_depth, embed_dim, min_radius, max_radius):
+    # 1. Normalize depth to [0, 1]
+    normalized_depth = (depth - min_depth) / (max_depth - min_depth)
+
+    # 2. Compute tangent norm based on depth
+    tangent_norm = min_radius + (max_radius - min_radius) * normalized_depth
+
+    # 3. Random unit direction
+    direction = torch.randn(embed_dim)
+    direction = direction / direction.norm()
+
+    # 4. Tangent vector = direction * norm
+    return direction * tangent_norm
+```
+
+Example from tree.json:
+- `skeletal_system` (depth 1) → norm ≈ 0.1 → close to origin after exp_map0
+- `rib_left_1` (depth 6) → norm ≈ 2.0 → far from origin after exp_map0
 
 ### 4. projection_head.py - LorentzProjectionHead
 
@@ -156,7 +175,7 @@ class LorentzProjectionHead(nn.Module):
 
 ```python
 class LorentzRankingLoss(nn.Module):
-    def __init__(self, margin=0.1, curv=1.0, num_samples_per_class=64):
+    def __init__(self, margin=0.1, curv=1.0, num_samples_per_class=64, num_negatives=8):
         ...
 
     def forward(self, voxel_emb, labels, label_emb):
@@ -169,14 +188,17 @@ class LorentzRankingLoss(nn.Module):
         1. Reshape voxel_emb to [N, 32], labels to [N]
         2. Sample K voxels per class present in batch
         3. For each sampled voxel:
-           - anchor   = voxel embedding
-           - positive = label_emb[true_class]
-           - negative = label_emb[random_other_class]
-        4. d_pos = pointwise_dist(anchors, positives)   # [K]
-           d_neg = pointwise_dist(anchors, negatives)   # [K]
-        5. loss = mean(max(0, margin + d_pos - d_neg))
+           - anchor    = voxel embedding                    # [32]
+           - positive  = label_emb[true_class]              # [32]
+           - negatives = label_emb[M random other classes]  # [M, 32]
+        4. d_pos = pointwise_dist(anchor, positive)         # scalar
+           d_neg = pointwise_dist(anchor.expand, negatives) # [M]
+        5. loss_per_anchor = mean(max(0, margin + d_pos - d_neg))  # mean over M
+        6. loss = mean over all K anchors
         """
 ```
+
+**Hyperparameter:** `num_negatives` (default=8) controls how many negative classes per anchor.
 
 AMP: Force float32 for all distance computations.
 
@@ -205,6 +227,7 @@ hyp_curv: float = 1.0
 hyp_weight: float = 0.05
 hyp_margin: float = 0.1
 hyp_samples_per_class: int = 64
+hyp_num_negatives: int = 8        # Number of negative classes per anchor
 hyp_min_radius: float = 0.1
 hyp_max_radius: float = 2.0
 ```
@@ -280,4 +303,5 @@ hyperbolic:
     margin: 0.1
     weight: 0.05
     samples_per_class: 64
+    num_negatives: 8    # Negative classes per anchor (tunable)
 ```
