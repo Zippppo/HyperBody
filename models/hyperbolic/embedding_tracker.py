@@ -9,7 +9,10 @@ Generates:
 import json
 import os
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models.hyperbolic.label_embedding import LorentzLabelEmbedding
 
 import numpy as np
 import torch
@@ -68,7 +71,7 @@ class EmbeddingTracker:
     def on_epoch_end(
         self,
         epoch: int,
-        label_embedding
+        label_embedding: "LorentzLabelEmbedding"
     ) -> None:
         """
         Record embeddings and generate visualizations.
@@ -101,6 +104,11 @@ class EmbeddingTracker:
             pca.fit(poincare_positions)
             self.pca_transform = pca.components_  # 2 x embed_dim
             self._save_metadata(tangent_vectors.shape[1])
+        elif self.pca_transform is None:
+            raise RuntimeError(
+                f"on_epoch_end called with epoch={epoch} before epoch=0. "
+                "Must call on_epoch_end(epoch=0, ...) first to initialize PCA transform."
+            )
 
         poincare_2d = poincare_positions @ self.pca_transform.T  # N x 2
 
@@ -221,8 +229,8 @@ class EmbeddingTracker:
         png_path = os.path.join(self.output_dir, f"epoch_{epoch:03d}.png")
         try:
             fig.write_image(png_path)
-        except Exception:
-            # Fall back to saving as HTML if PNG export fails
+        except (ValueError, ImportError, RuntimeError):
+            # Fall back to saving as HTML if PNG export fails (kaleido/Chrome not installed)
             html_path = os.path.join(self.output_dir, f"epoch_{epoch:03d}.html")
             fig.write_html(html_path)
 

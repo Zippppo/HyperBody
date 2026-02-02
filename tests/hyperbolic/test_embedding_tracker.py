@@ -232,6 +232,21 @@ class TestEmbeddingTracker:
         assert data["epochs"][0]["has_nan"] is False
         assert data["epochs"][1]["has_nan"] is True
 
+    def test_epoch_ordering_guard(
+        self, class_names, class_to_system, class_depths, temp_output_dir, label_embedding
+    ):
+        """Test that calling on_epoch_end without epoch 0 raises error."""
+        tracker = EmbeddingTracker(
+            model_name="test_model",
+            class_names=class_names,
+            class_to_system=class_to_system,
+            output_dir=temp_output_dir
+        )
+
+        # Calling with epoch > 0 before epoch 0 should raise RuntimeError
+        with pytest.raises(RuntimeError, match="Must call on_epoch_end.*epoch=0"):
+            tracker.on_epoch_end(epoch=1, label_embedding=label_embedding)
+
 
 class TestClassToSystemMapping:
     """Test organ system mapping function."""
