@@ -26,7 +26,7 @@ from models.hyperbolic.lorentz_loss import LorentzRankingLoss
 from utils.metrics import DiceMetric
 from utils.checkpoint import save_checkpoint, load_checkpoint
 
-
+##CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4  train.py --config 
 def set_seed(seed: int = 42):
     """Set random seed for reproducibility."""
     random.seed(seed)
@@ -85,6 +85,7 @@ def cleanup_distributed():
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train 3D U-Net for body segmentation")
+    parser.add_argument("--config", type=str, default=None, help="Path to YAML config file")
     parser.add_argument("--resume", type=str, default="", help="Checkpoint path to resume from")
     parser.add_argument("--batch_size", type=int, default=None, help="Batch size per GPU")
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs")
@@ -234,7 +235,12 @@ def validate(model, loader, seg_criterion, hyp_criterion, hyp_weight, metric, de
 
 def main():
     args = parse_args()
-    cfg = Config()
+
+    # Load config from YAML or use defaults
+    if args.config:
+        cfg = Config.from_yaml(args.config)
+    else:
+        cfg = Config()
 
     # Override config with CLI args
     if args.batch_size is not None:
