@@ -27,7 +27,7 @@ from models.hyperbolic.lorentz_loss import LorentzRankingLoss
 from utils.metrics import DiceMetric
 from utils.checkpoint import save_checkpoint, load_checkpoint
 
-##CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4  train.py --config 
+##CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4  train.py --config configs/lorentz_random.yaml
 def set_seed(seed: int = 42):
     """Set random seed for reproducibility."""
     random.seed(seed)
@@ -397,9 +397,9 @@ def main():
     # TensorBoard writer (only main process)
     writer = SummaryWriter(log_dir=run_log_dir) if is_main_process() else None
 
-    # Embedding tracker (only main process)
+    # Embedding tracker (only main process, controlled by config)
     embedding_tracker = None
-    if is_main_process():
+    if is_main_process() and cfg.track_embeddings:
         embedding_tracker = EmbeddingTracker(
             model_name="lorentz",
             class_names=class_names,
