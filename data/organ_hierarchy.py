@@ -66,6 +66,100 @@ def load_organ_hierarchy(tree_path: str, class_names: List[str]) -> Dict[int, in
     return depths
 
 
+def _find_system_recursive(
+    tree: dict,
+    target_name: str,
+    ancestors: List[str] = None,
+    depth: int = 0
+) -> Optional[List[str]]:
+    """
+    Recursively search for target_name and return its ancestor path.
+
+    Args:
+        tree: Dictionary representing the hierarchy subtree
+        target_name: Class name to find
+        ancestors: List of ancestor keys from root to current node
+        depth: Current depth in traversal
+
+    Returns:
+        List of ancestor keys if found, None otherwise
+    """
+    if ancestors is None:
+        ancestors = []
+
+    for key, value in tree.items():
+        current_ancestors = ancestors + [key]
+
+        if isinstance(value, str):
+            if value == target_name:
+                return current_ancestors
+        elif isinstance(value, dict):
+            result = _find_system_recursive(value, target_name, current_ancestors, depth + 1)
+            if result is not None:
+                return result
+    return None
+
+
+# Mapping from tree.json system names to visualization-friendly names
+SYSTEM_NAME_MAP = {
+    "skeletal_system": "skeletal",
+    "muscular_system": "muscular",
+    "digestive_system": "digestive",
+    "respiratory_system": "respiratory",
+    "urinary_system": "urinary",
+    "reproductive_system": "other",
+    "endocrine_system": "other",
+    "lymphatic_system": "other",
+    "cardiovascular_system": "cardiovascular",
+    "nervous_system": "nervous",
+    "body_cavities": "other",
+    "splanchnology": "other",  # Parent of digestive, respiratory, etc.
+}
+
+
+def load_class_to_system(tree_path: str, class_names: List[str]) -> Dict[int, str]:
+    """
+    Parse tree.json and extract organ system for each class.
+
+    For classes under splanchnology, uses the sub-system (digestive, respiratory, etc.)
+    rather than splanchnology itself.
+
+    Args:
+        tree_path: Path to tree.json
+        class_names: List of class names (index = class_idx)
+
+    Returns:
+        Dictionary mapping class_idx -> system name
+    """
+    with open(tree_path, "r") as f:
+        tree = json.load(f)
+
+    class_to_system = {}
+    for idx, name in enumerate(class_names):
+        ancestors = _find_system_recursive(tree, name, None, 0)
+        if ancestors is None:
+            system = "other"
+        else:
+            # Find the most specific system in the ancestor path
+            # Check from most specific (deepest) to least specific
+            system = "other"
+            for ancestor in reversed(ancestors):
+                if ancestor in SYSTEM_NAME_MAP:
+                    mapped = SYSTEM_NAME_MAP[ancestor]
+                    if mapped != "other":
+                        system = mapped
+                        break
+            # If no specific system found, use the first mapped one
+            if system == "other":
+                for ancestor in ancestors:
+                    if ancestor in SYSTEM_NAME_MAP:
+                        system = SYSTEM_NAME_MAP[ancestor]
+                        break
+        class_to_system[idx] = system
+
+    return class_to_system
+
+
 def get_depth_stats(depths: Dict[int, int]) -> Dict[str, int]:
     """
     Get statistics about depth distribution.
