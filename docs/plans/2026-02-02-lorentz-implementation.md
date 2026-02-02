@@ -919,8 +919,7 @@ git commit -m "feat(hyperbolic): add LorentzLabelEmbedding
 
 Learnable class embeddings in Lorentz space with hierarchy-aware
 initialization. Deeper organs start farther from origin.
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -1086,8 +1085,7 @@ git add models/hyperbolic/projection_head.py models/hyperbolic/__init__.py tests
 git commit -m "feat(hyperbolic): add LorentzProjectionHead
 
 1x1x1 conv + exp_map0 to project decoder features to Lorentz space.
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -1386,8 +1384,7 @@ git commit -m "feat(hyperbolic): add LorentzRankingLoss
 
 Triplet margin loss in Lorentz space with configurable num_negatives
 per anchor. Uses pointwise_dist for O(K) efficiency.
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -1519,8 +1516,7 @@ git commit -m "feat(unet3d): add return_features option
 
 Allow returning decoder features (d2) for hyperbolic projection head.
 Backward compatible - default behavior unchanged.
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -1778,8 +1774,7 @@ git commit -m "feat(models): add BodyNet wrapper
 
 Combines UNet3D segmentation with Lorentz hyperbolic embedding branch.
 Returns (logits, voxel_emb, label_emb) tuple.
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -1867,8 +1862,7 @@ git add config.py
 git commit -m "feat(config): add hyperbolic configuration fields
 
 Add hyp_* fields for Lorentz hyperbolic embedding configuration.
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -2101,8 +2095,7 @@ git commit -m "feat(train): integrate hyperbolic loss
 - Add LorentzRankingLoss with hyp_weight=0.05
 - Track seg_loss and hyp_loss separately
 - Update TensorBoard logging for hyperbolic metrics
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+"
 ```
 
 ---
