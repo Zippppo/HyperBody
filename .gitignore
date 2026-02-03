@@ -9,7 +9,6 @@ model_eval_res/
 merged.zip
 .vscode/
 /docs/visualizations/
-/runs/
 /checkpoints/
 .worktrees/
 /eval/pred/
