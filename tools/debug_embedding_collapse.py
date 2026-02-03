@@ -123,14 +123,14 @@ def simulate_gradient_update(config_path: str):
     )
 
     # Create dummy data
-    B, H, W, Z = 2, 36, 32, 67  # Smaller for speed
-    D = cfg.hyp_embed_dim
+    B, D, H, W = 2, 67, 36, 32  # D=Depth, spatial dimensions
+    C = cfg.hyp_embed_dim  # C=Channels (embed_dim)
 
     # Random voxel embeddings on manifold
-    voxel_emb = torch.randn(B, D, H, W, Z) * 0.5
+    voxel_emb = torch.randn(B, C, D, H, W) * 0.5
 
     # Random labels
-    labels = torch.randint(0, cfg.num_classes, (B, H, W, Z))
+    labels = torch.randint(0, cfg.num_classes, (B, D, H, W))
 
     # Get label embeddings
     label_emb = model.label_emb()

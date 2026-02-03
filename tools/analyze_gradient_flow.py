@@ -53,14 +53,14 @@ def analyze_loss_gradient_direction(config_path: str):
     )
 
     # Create dummy data
-    B, H, W, Z = 2, 36, 32, 67
-    D = cfg.hyp_embed_dim
+    B, D, H, W = 2, 67, 36, 32  # D=Depth, spatial dimensions
+    C = cfg.hyp_embed_dim  # C=Channels (embed_dim)
 
     # Random voxel embeddings
-    voxel_emb = torch.randn(B, D, H, W, Z) * 0.5
+    voxel_emb = torch.randn(B, C, D, H, W) * 0.5
 
     # Random labels (ensure all classes appear)
-    labels = torch.randint(0, cfg.num_classes, (B, H, W, Z))
+    labels = torch.randint(0, cfg.num_classes, (B, D, H, W))
 
     # Get initial tangent embeddings
     tangent_before = model.label_emb.tangent_embeddings.data.clone()
@@ -151,10 +151,10 @@ def analyze_loss_gradient_direction(config_path: str):
         # Recompute to inspect internals
         from models.hyperbolic.lorentz_ops import pointwise_dist, pairwise_dist
 
-        B, D, H, W, Z = voxel_emb.shape
+        B, C, D, H, W = voxel_emb.shape
         num_classes = label_emb.shape[0]
 
-        voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, D)
+        voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, C)
         labels_flat = labels.reshape(-1)
 
         # Sample some anchors

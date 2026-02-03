@@ -38,21 +38,21 @@ class LorentzProjectionHead(nn.Module):
         Project decoder features to Lorentz space.
 
         Args:
-            x: Decoder features [B, C, H, W, D]
+            x: Decoder features (B, C, D, H, W)
 
         Returns:
-            Lorentz embeddings [B, embed_dim, H, W, D]
+            Lorentz embeddings (B, embed_dim, D, H, W)
         """
         # 1x1x1 convolution
-        x = self.conv(x)  # [B, embed_dim, H, W, D]
+        x = self.conv(x)  # (B, embed_dim, D, H, W)
 
-        # Permute for exp_map0: [B, H, W, D, embed_dim]
+        # Permute for exp_map0: (B, D, H, W, embed_dim)
         x = x.permute(0, 2, 3, 4, 1)
 
         # Map to Lorentz manifold
         x = exp_map0(x, self.curv)
 
-        # Permute back: [B, embed_dim, H, W, D]
+        # Permute back: (B, embed_dim, D, H, W)
         x = x.permute(0, 4, 1, 2, 3)
 
         return x

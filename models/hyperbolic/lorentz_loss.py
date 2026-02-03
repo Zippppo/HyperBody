@@ -54,9 +54,9 @@ class LorentzRankingLoss(nn.Module):
         Compute ranking loss.
 
         Args:
-            voxel_emb: [B, D, H, W, Z] Lorentz voxel embeddings
-            labels: [B, H, W, Z] ground truth labels (int64)
-            label_emb: [num_classes, D] Lorentz class embeddings
+            voxel_emb: (B, C, D, H, W) Lorentz voxel embeddings (C=embed_dim)
+            labels: (B, D, H, W) ground truth labels (int64)
+            label_emb: (num_classes, C) Lorentz class embeddings
 
         Returns:
             Scalar loss
@@ -66,12 +66,12 @@ class LorentzRankingLoss(nn.Module):
         label_emb = label_emb.float()
 
         device = voxel_emb.device
-        B, D, H, W, Z = voxel_emb.shape
+        B, C, D, H, W = voxel_emb.shape
         num_classes = label_emb.shape[0]
 
-        # Reshape: [B, D, H, W, Z] -> [N, D] where N = B*H*W*Z
-        voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, D)  # [N, D]
-        labels_flat = labels.reshape(-1)  # [N]
+        # Reshape: (B, C, D, H, W) -> (N, C) where N = B*D*H*W
+        voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, C)  # (N, C)
+        labels_flat = labels.reshape(-1)  # (N)
 
         # Fully vectorized sampling: sample up to num_samples_per_class per class
         N = labels_flat.shape[0]
@@ -119,10 +119,10 @@ class LorentzRankingLoss(nn.Module):
             return torch.tensor(0.0, device=device, requires_grad=True)
 
         # Get anchor embeddings
-        anchors = voxel_flat[sampled_indices]  # [K, D]
+        anchors = voxel_flat[sampled_indices]  # (K, C)
 
         # Get positive embeddings (class embedding for each anchor's true class)
-        positives = label_emb[sampled_classes]  # [K, D]
+        positives = label_emb[sampled_classes]  # (K, C)
 
         # Compute positive distances
         d_pos = pointwise_dist(anchors, positives, self.curv)  # [K]

@@ -10,10 +10,10 @@ class TestLorentzProjectionHead:
         from models.hyperbolic.projection_head import LorentzProjectionHead
 
         head = LorentzProjectionHead(in_channels=32, embed_dim=32)
-        x = torch.randn(2, 32, 16, 12, 8)  # [B, C, H, W, D]
+        x = torch.randn(2, 32, 8, 16, 12)  # (B, C, D, H, W)
 
         out = head(x)
-        assert out.shape == (2, 32, 16, 12, 8), f"Expected (2, 32, 16, 12, 8), got {out.shape}"
+        assert out.shape == (2, 32, 8, 16, 12), f"Expected (2, 32, 8, 16, 12), got {out.shape}"
 
     def test_output_is_finite(self):
         """Output should not contain inf or nan."""

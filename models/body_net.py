@@ -19,9 +19,9 @@ class BodyNet(nn.Module):
     UNet3D with Lorentz hyperbolic embedding branch.
 
     Returns:
-        - logits: Segmentation logits [B, num_classes, H, W, D]
-        - voxel_emb: Lorentz voxel embeddings [B, embed_dim, H, W, D]
-        - label_emb: Lorentz class embeddings [num_classes, embed_dim]
+        - logits: Segmentation logits (B, num_classes, D, H, W)
+        - voxel_emb: Lorentz voxel embeddings (B, embed_dim, D, H, W)
+        - label_emb: Lorentz class embeddings (num_classes, embed_dim)
     """
 
     def __init__(
@@ -94,13 +94,13 @@ class BodyNet(nn.Module):
         Forward pass.
 
         Args:
-            x: Input volume [B, in_channels, H, W, D]
+            x: Input volume (B, in_channels, D, H, W)
 
         Returns:
             Tuple of:
-                - logits: [B, num_classes, H, W, D]
-                - voxel_emb: [B, embed_dim, H, W, D] in Lorentz space
-                - label_emb: [num_classes, embed_dim] in Lorentz space
+                - logits: (B, num_classes, D, H, W)
+                - voxel_emb: (B, embed_dim, D, H, W) in Lorentz space
+                - label_emb: (num_classes, embed_dim) in Lorentz space
         """
         # Get segmentation logits and decoder features
         logits, d2 = self.unet(x, return_features=True)
