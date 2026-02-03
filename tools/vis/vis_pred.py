@@ -5,7 +5,7 @@ Usage:
     python vis/vis_pred.py --pred_dir eval/pred/baseline --output_dir vis/res
     python vis/vis_pred.py --pred_dir eval/pred/baseline --sample BDMAP_00000053.npz
     python vis/vis_pred.py --pred_dir eval/pred/baseline --gt_dir Dataset/voxel_data --compare
-    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_random --gt_dir Dataset/voxel_data --compare --output_dir vis/res
+    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir semantic_vis/
 """
 import argparse
 import json
