@@ -34,6 +34,9 @@ class Config:
     hyp_max_radius: float = 2.0   # Deep organ init norm
     hyp_direction_mode: str = "random"  # "random" or "semantic"
     hyp_text_embedding_path: str = "Dataset/text_embeddings/sat_label_embeddings.pt"
+    hyp_freeze_epochs: int = 0  # Freeze label embeddings for first N epochs (0 = no freeze)
+    hyp_text_lr_ratio: float = 0.01  # Text embedding LR = base_lr * ratio
+    hyp_text_grad_clip: float = 0.1  # Gradient clip for text embeddings (first unfreeze epoch)
 
     # Training
     batch_size: int = 1  # per GPU

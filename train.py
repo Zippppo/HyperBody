@@ -121,7 +121,7 @@ def setup_logging(log_dir: str, is_main: bool = True):
     return logging.getLogger(__name__)
 
 
-def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, optimizer, device, grad_clip, epoch=0, scaler=None):
+def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, optimizer, device, grad_clip, epoch=0, scaler=None, cfg=None):
     """Train for one epoch.
 
     Args:
@@ -135,6 +135,7 @@ def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, opt
         grad_clip: Gradient clipping value (0 to disable)
         epoch: Current epoch number (used for DistributedSampler shuffling)
         scaler: Optional GradScaler for AMP training (None to disable AMP)
+        cfg: Config object (for hyp_freeze_epochs, hyp_text_grad_clip)
 
     Returns:
         Tuple of (avg_total_loss, avg_seg_loss, avg_hyp_loss)
@@ -149,6 +150,11 @@ def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, opt
     seg_loss_sum = 0.0
     hyp_loss_sum = 0.0
     num_batches = 0
+
+    # Check if this is the first unfreeze epoch (for extra gradient clipping)
+    is_first_unfreeze_epoch = (cfg is not None and
+                               cfg.hyp_freeze_epochs > 0 and
+                               epoch == cfg.hyp_freeze_epochs)
 
     # Only show progress bar on main process
     pbar = tqdm(loader, desc="  Train", leave=False, disable=not is_main_process())
@@ -169,6 +175,10 @@ def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, opt
             scaler.unscale_(optimizer)
             if grad_clip > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            # Extra gradient clipping for text embeddings on first unfreeze epoch
+            if is_first_unfreeze_epoch:
+                raw_model = model.module if hasattr(model, 'module') else model
+                nn.utils.clip_grad_norm_(raw_model.label_emb.tangent_embeddings, cfg.hyp_text_grad_clip)
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -180,6 +190,10 @@ def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, opt
             total_loss.backward()
             if grad_clip > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            # Extra gradient clipping for text embeddings on first unfreeze epoch
+            if is_first_unfreeze_epoch:
+                raw_model = model.module if hasattr(model, 'module') else model
+                nn.utils.clip_grad_norm_(raw_model.label_emb.tangent_embeddings, cfg.hyp_text_grad_clip)
             optimizer.step()
 
         total_loss_sum += total_loss.item()
@@ -349,8 +363,9 @@ def main():
     model = model.to(device)
 
     # Wrap model with DDP if distributed
+    # find_unused_parameters=True is needed when label embeddings are frozen
     if is_distributed():
-        model = DDP(model, device_ids=[local_rank])
+        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
         logger.info(f"Using DistributedDataParallel on {get_world_size()} GPUs")
 
     # Segmentation loss, optimizer, scheduler
@@ -369,7 +384,15 @@ def main():
         num_negatives=cfg.hyp_num_negatives,
     )
 
-    optimizer = optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+    # Separate param groups for visual and text embeddings (differential LR)
+    raw_model = model.module if hasattr(model, 'module') else model
+    visual_params = [p for n, p in raw_model.named_parameters() if 'label_emb' not in n]
+    text_params = [p for n, p in raw_model.named_parameters() if 'label_emb' in n]
+
+    optimizer = optim.Adam([
+        {'params': visual_params, 'lr': cfg.lr},
+        {'params': text_params, 'lr': cfg.lr * cfg.hyp_text_lr_ratio}
+    ], weight_decay=cfg.weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", factor=cfg.lr_factor, patience=cfg.lr_patience
     )
@@ -396,6 +419,12 @@ def main():
                 scaler.load_state_dict(checkpoint["scaler_state_dict"])
                 logger.info("Loaded GradScaler state from checkpoint")
         logger.info(f"Resumed at epoch {start_epoch}, best_dice={best_dice:.4f}")
+        # Warn about freeze state when resuming
+        if cfg.hyp_freeze_epochs > 0:
+            if start_epoch < cfg.hyp_freeze_epochs:
+                logger.info(f"  Note: Text embeddings will remain FROZEN until epoch {cfg.hyp_freeze_epochs}")
+            elif start_epoch == cfg.hyp_freeze_epochs:
+                logger.info(f"  Note: Resuming at first unfreeze epoch, extra gradient clipping will be applied")
 
     # TensorBoard writer (only main process)
     writer = SummaryWriter(log_dir=run_log_dir) if is_main_process() else None
@@ -419,16 +448,35 @@ def main():
 
     # Training loop
     logger.info(f"Starting training from epoch {start_epoch} to {cfg.epochs}")
+    if cfg.hyp_freeze_epochs > 0:
+        if cfg.hyp_freeze_epochs >= cfg.epochs:
+            logger.warning(f"hyp_freeze_epochs ({cfg.hyp_freeze_epochs}) >= epochs ({cfg.epochs}), text embeddings will NEVER be unfrozen!")
+        else:
+            logger.info(f"Text embedding freeze: epochs 0-{cfg.hyp_freeze_epochs - 1}, unfreeze at epoch {cfg.hyp_freeze_epochs}")
+            logger.info(f"Text embedding LR ratio: {cfg.hyp_text_lr_ratio}, grad clip on unfreeze: {cfg.hyp_text_grad_clip}")
     logger.info("-" * 60)
 
     for epoch in range(start_epoch, cfg.epochs):
+        # Freeze/unfreeze label embeddings based on epoch
+        raw_model = model.module if hasattr(model, 'module') else model
+        if cfg.hyp_freeze_epochs > 0:
+            if epoch < cfg.hyp_freeze_epochs:
+                raw_model.label_emb.tangent_embeddings.requires_grad_(False)
+                freeze_status = "FROZEN"
+            else:
+                raw_model.label_emb.tangent_embeddings.requires_grad_(True)
+                freeze_status = "UNFROZEN" if epoch > cfg.hyp_freeze_epochs else "UNFROZEN (first epoch, extra grad clip)"
+        else:
+            freeze_status = "trainable"
+
         current_lr = optimizer.param_groups[0]["lr"]
-        logger.info(f"Epoch [{epoch + 1}/{cfg.epochs}]  LR: {current_lr:.6f}")
+        text_lr = optimizer.param_groups[1]["lr"] if len(optimizer.param_groups) > 1 else current_lr
+        logger.info(f"Epoch [{epoch + 1}/{cfg.epochs}]  LR: {current_lr:.6f}  TextLR: {text_lr:.6f}  TextEmb: {freeze_status}")
 
         # Train
         train_total, train_seg, train_hyp = train_one_epoch(
             model, train_loader, criterion, hyp_criterion, cfg.hyp_weight,
-            optimizer, device, cfg.grad_clip, epoch=epoch, scaler=scaler
+            optimizer, device, cfg.grad_clip, epoch=epoch, scaler=scaler, cfg=cfg
         )
 
         # Validate

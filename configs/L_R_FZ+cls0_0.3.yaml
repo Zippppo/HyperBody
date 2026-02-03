@@ -1,5 +1,5 @@
-# Semantic direction initialization experiment
-# Uses BioLORD text embeddings for label direction initialization
+# Default training configuration
+# Copy this file and modify for different experiments
 
 # Data
 data_dir: "Dataset/voxel_data"
@@ -29,9 +29,9 @@ hyp_samples_per_class: 64
 hyp_num_negatives: 8
 hyp_min_radius: 0.1
 hyp_max_radius: 2.0
-hyp_direction_mode: "semantic"  # Use text embedding directions
+hyp_direction_mode: "random"  # "random" or "semantic"
 hyp_text_embedding_path: "Dataset/text_embeddings/sat_label_embeddings.pt"
-hyp_freeze_epochs: 0  # Freeze label embeddings for first N epochs
+hyp_freeze_epochs: 10  # Freeze label embeddings for first N epochs
 hyp_text_lr_ratio: 0.01  # Text embedding LR = base_lr * ratio
 hyp_text_grad_clip: 0.1  # Gradient clip for text embeddings (first unfreeze epoch)
 
@@ -55,9 +55,9 @@ lr_patience: 10
 lr_factor: 0.5
 
 # Checkpoint
-checkpoint_dir: "checkpoints/lorentz_semantic"
+checkpoint_dir: "checkpoints/L_R_FZ+cls0_0.3"
 save_every: 10
-log_dir: "runs/lorentz_semantic"
+log_dir: "runs/L_R_FZ+cls0_0.3"
 
 # GPU
 gpu_ids: [0, 1]
