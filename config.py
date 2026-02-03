@@ -17,7 +17,7 @@ class Config:
     # Model
     in_channels: int = 1
     base_channels: int = 32
-    num_levels: int = 4
+    num_levels: int = 4 #当前的无用参数，本意是动态调整3DUnet的层数
 
     # Dense Bottleneck
     growth_rate: int = 32      # channels added per layer
@@ -27,7 +27,6 @@ class Config:
     # Hyperbolic
     hyp_embed_dim: int = 32
     hyp_curv: float = 1.0
-    hyp_weight: float = 0.05      # Loss weight
     hyp_margin: float = 0.1       # Triplet margin
     hyp_samples_per_class: int = 64
     hyp_num_negatives: int = 8    # Negative classes per anchor
@@ -50,6 +49,7 @@ class Config:
     # Loss
     ce_weight: float = 0.5
     dice_weight: float = 0.5
+    hyp_weight: float = 0.05      # Loss weight
 
     # LR scheduler
     lr_patience: int = 10

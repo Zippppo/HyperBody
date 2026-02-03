@@ -11,7 +11,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast
+from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
@@ -158,7 +159,7 @@ def train_one_epoch(model, loader, seg_criterion, hyp_criterion, hyp_weight, opt
         optimizer.zero_grad()
 
         if scaler is not None:
-            with autocast():
+            with autocast(device_type="cuda"):
                 logits, voxel_emb, label_emb = model(inputs)
                 seg_loss = seg_criterion(logits, targets)
                 hyp_loss = hyp_criterion(voxel_emb, targets, label_emb)
