@@ -402,8 +402,10 @@ def main():
     # Embedding tracker (only main process, controlled by config)
     embedding_tracker = None
     if is_main_process() and cfg.track_embeddings:
+        # Use checkpoint_dir basename as model_name to avoid conflicts
+        model_name = os.path.basename(cfg.checkpoint_dir)
         embedding_tracker = EmbeddingTracker(
-            model_name="lorentz",
+            model_name=model_name,
             class_names=class_names,
             class_to_system=class_to_system,
             output_dir="docs/visualizations",
