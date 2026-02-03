@@ -5,6 +5,7 @@ Usage:
     python vis/vis_pred.py --pred_dir eval/pred/baseline --output_dir vis/res
     python vis/vis_pred.py --pred_dir eval/pred/baseline --sample BDMAP_00000053.npz
     python vis/vis_pred.py --pred_dir eval/pred/baseline --gt_dir Dataset/voxel_data --compare
+    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_random --gt_dir Dataset/voxel_data --compare --output_dir vis/res
 """
 import argparse
 import json
@@ -57,7 +58,7 @@ def parse_args():
                         help="Directory containing prediction .npz files")
     parser.add_argument("--gt_dir", type=str, default="Dataset/voxel_data",
                         help="Directory containing ground truth .npz files")
-    parser.add_argument("--output_dir", type=str, default="vis_res/infer_3D",
+    parser.add_argument("--output_dir", type=str, default="docs/visualizations",
                         help="Output directory for HTML visualizations")
     parser.add_argument("--sample", type=str, default=None,
                         help="Specific sample filename to visualize (e.g., BDMAP_00000053.npz)")
