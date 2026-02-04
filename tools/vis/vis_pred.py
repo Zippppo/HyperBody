@@ -2,10 +2,11 @@
 Visualization script for prediction results.
 
 Usage:
-    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir semantic_vis/
-    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_random --gt_dir Dataset/voxel_data --compare --output_dir random_vis/
-    python tools/vis/vis_pred.py --pred_dir eval/pred/L_R_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir L_R_FZ+cls0_0.1/
-    python tools/vis/vis_pred.py --pred_dir eval/pred/L_S_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir L_S_FZ+cls0_0.1/
+    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/baseline/
+    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/semantic_vis/
+    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_random --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/random_vis/
+    python tools/vis/vis_pred.py --pred_dir eval/pred/L_R_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/L_R_FZ+cls0_0.1/
+    python tools/vis/vis_pred.py --pred_dir eval/pred/L_S_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/L_S_FZ+cls0_0.1/
 """
 import argparse
 import json
@@ -50,6 +51,24 @@ ORGAN_SYSTEMS = {
 # Individual rib pairs
 for i in range(1, 13):
     ORGAN_SYSTEMS[f"Rib Pair {i}"] = [f"rib_left_{i}", f"rib_right_{i}"]
+
+# 24 distinct colors for individual ribs (12 left + 12 right)
+RIB_COLORS = [
+    # Left ribs (1-12): warm colors gradient
+    "#FF0000", "#FF4500", "#FF8C00", "#FFD700",
+    "#ADFF2F", "#32CD32", "#00CED1", "#1E90FF",
+    "#4169E1", "#8A2BE2", "#FF1493", "#DC143C",
+    # Right ribs (1-12): cool colors gradient
+    "#00FFFF", "#00BFFF", "#87CEEB", "#ADD8E6",
+    "#B0E0E6", "#AFEEEE", "#7FFFD4", "#66CDAA",
+    "#3CB371", "#2E8B57", "#228B22", "#006400",
+]
+
+# Build rib name to color index mapping
+RIB_NAME_TO_INDEX = {}
+for i in range(1, 13):
+    RIB_NAME_TO_INDEX[f"rib_left_{i}"] = i - 1       # 0-11
+    RIB_NAME_TO_INDEX[f"rib_right_{i}"] = i + 11    # 12-23
 
 
 def parse_args():
@@ -108,14 +127,19 @@ def get_system_color(system_name):
         "Organs": "Plasma",
         "Digestive": "YlOrRd",
         "Muscles": "Reds",
-        "Ribs (All)": "Blues",
-        "Ribs Left": "Blues",
-        "Ribs Right": "Greens",
+        "Ribs (All)": None,  # Use discrete colors
+        "Ribs Left": None,   # Use discrete colors
+        "Ribs Right": None,  # Use discrete colors
     }
     # Individual ribs
     if system_name.startswith("Rib "):
-        return "Blues"
+        return None  # Use discrete colors
     return colors.get(system_name, "Rainbow")
+
+
+def is_rib_system(system_name):
+    """Check if the system is a rib-related system."""
+    return system_name in ["Ribs (All)", "Ribs Left", "Ribs Right"] or system_name.startswith("Rib Pair")
 
 
 def create_trace_for_system(labels_3d, grid_world_min, voxel_size, class_names,
@@ -144,24 +168,54 @@ def create_trace_for_system(labels_3d, grid_world_min, voxel_size, class_names,
     # Hover text
     hover_text = [class_names[int(l)] for l in voxel_classes]
 
-    trace = go.Scatter3d(
-        x=centers[:, 0],
-        y=centers[:, 1],
-        z=centers[:, 2],
-        mode="markers",
-        marker=dict(
-            size=2,
-            color=voxel_classes,
-            colorscale=get_system_color(system_name),
-            opacity=1.0,
-            cmin=0,
-            cmax=len(class_names) - 1,
-        ),
-        text=hover_text,
-        hovertemplate="Class: %{text}<br>X: %{x:.1f}<br>Y: %{y:.1f}<br>Z: %{z:.1f}<extra></extra>",
-        name=trace_name,
-        visible=(system_name == "All"),  # Only "All" visible by default
-    )
+    # Check if this is a rib system - use discrete colors for each rib
+    if is_rib_system(system_name):
+        # Map class indices to rib color indices
+        rib_color_indices = []
+        for cls_idx in voxel_classes:
+            cls_name = class_names[int(cls_idx)]
+            if cls_name in RIB_NAME_TO_INDEX:
+                rib_color_indices.append(RIB_NAME_TO_INDEX[cls_name])
+            else:
+                rib_color_indices.append(0)
+
+        # Map rib indices to actual colors
+        marker_colors = [RIB_COLORS[idx] for idx in rib_color_indices]
+
+        trace = go.Scatter3d(
+            x=centers[:, 0],
+            y=centers[:, 1],
+            z=centers[:, 2],
+            mode="markers",
+            marker=dict(
+                size=2,
+                color=marker_colors,
+                opacity=1.0,
+            ),
+            text=hover_text,
+            hovertemplate="Class: %{text}<br>X: %{x:.1f}<br>Y: %{y:.1f}<br>Z: %{z:.1f}<extra></extra>",
+            name=trace_name,
+            visible=(system_name == "All"),
+        )
+    else:
+        trace = go.Scatter3d(
+            x=centers[:, 0],
+            y=centers[:, 1],
+            z=centers[:, 2],
+            mode="markers",
+            marker=dict(
+                size=2,
+                color=voxel_classes,
+                colorscale=get_system_color(system_name),
+                opacity=1.0,
+                cmin=0,
+                cmax=len(class_names) - 1,
+            ),
+            text=hover_text,
+            hovertemplate="Class: %{text}<br>X: %{x:.1f}<br>Y: %{y:.1f}<br>Z: %{z:.1f}<extra></extra>",
+            name=trace_name,
+            visible=(system_name == "All"),  # Only "All" visible by default
+        )
 
     return trace, int(mask.sum())
 
