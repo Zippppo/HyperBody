@@ -8,6 +8,10 @@ Usage:
 import argparse
 import json
 import os
+import sys
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import torch
@@ -23,6 +27,10 @@ def parse_args():
     parser.add_argument("--num_classes", type=int, default=70, help="Number of classes")
     parser.add_argument("--output", type=str, default="eval/results/metrics.json", help="Output JSON path")
     return parser.parse_args()
+
+
+# Rib class indices: rib_left_1 to rib_left_12 (23-34), rib_right_1 to rib_right_12 (35-46)
+RIB_CLASS_INDICES = list(range(23, 47))  # 24 ribs total
 
 
 def evaluate_model(pred_dir, gt_dir, num_classes):
@@ -80,8 +88,16 @@ def evaluate_model(pred_dir, gt_dir, num_classes):
     # Compute final metrics
     dice_per_class, mean_dice, valid_mask = metric.compute()
 
+    # Compute rib mean dice
+    rib_dice_values = []
+    for c in RIB_CLASS_INDICES:
+        if valid_mask[c]:
+            rib_dice_values.append(dice_per_class[c].item())
+    rib_mean_dice = sum(rib_dice_values) / len(rib_dice_values) if rib_dice_values else 0.0
+
     result = {
         "mean_dice": mean_dice,
+        "rib_mean_dice": rib_mean_dice,
         "num_samples": len(pred_files),
         "per_class": {}
     }
@@ -124,16 +140,16 @@ def main():
 
         if result is not None:
             all_results[model_name] = result
-            print(f"  Mean Dice: {result['mean_dice']:.4f} ({result['num_samples']} samples)")
+            print(f"  Mean Dice: {result['mean_dice']:.4f}, Rib Dice: {result['rib_mean_dice']:.4f} ({result['num_samples']} samples)")
 
     # Print summary table
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print("Summary")
-    print("=" * 50)
-    print(f"{'Model':<20} {'Mean Dice':<12} {'Samples':<10}")
-    print("-" * 50)
+    print("=" * 60)
+    print(f"{'Model':<20} {'Mean Dice':<12} {'Rib Dice':<12} {'Samples':<10}")
+    print("-" * 60)
     for model_name, result in sorted(all_results.items(), key=lambda x: -x[1]["mean_dice"]):
-        print(f"{model_name:<20} {result['mean_dice']:<12.4f} {result['num_samples']:<10}")
+        print(f"{model_name:<20} {result['mean_dice']:<12.4f} {result['rib_mean_dice']:<12.4f} {result['num_samples']:<10}")
 
     # Save results
     os.makedirs(os.path.dirname(args.output), exist_ok=True)

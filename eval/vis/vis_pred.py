@@ -2,11 +2,11 @@
 Visualization script for prediction results.
 
 Usage:
-    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/baseline/
-    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/semantic_vis/
-    python tools/vis/vis_pred.py --pred_dir eval/pred/lorentz_random --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/random_vis/
-    python tools/vis/vis_pred.py --pred_dir eval/pred/L_R_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/L_R_FZ+cls0_0.1/
-    python tools/vis/vis_pred.py --pred_dir eval/pred/L_S_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/L_S_FZ+cls0_0.1/
+    python eval/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/baseline/
+    python eval/vis/vis_pred.py --pred_dir eval/pred/lorentz_semantic --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/semantic_vis/
+    python eval/vis/vis_pred.py --pred_dir eval/pred/lorentz_random --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/random_vis/
+    python eval/vis/vis_pred.py --pred_dir eval/pred/L_R_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/L_R_FZ+cls0_0.1/
+    python eval/vis/vis_pred.py --pred_dir eval/pred/L_S_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/L_S_FZ+cls0_0.1/
 """
 import argparse
 import json
