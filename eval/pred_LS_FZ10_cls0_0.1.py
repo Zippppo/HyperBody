@@ -1,11 +1,12 @@
 """
-Prediction script for lorentz_random model (BodyNet with hyperbolic embedding).
+Prediction script for L_S_FZ+cls0_0.3 model (BodyNet with hyperbolic embedding + semantic direction).
+
+This model uses:
+- hyp_freeze_epochs=10: Text embeddings frozen for first 10 epochs
+- hyp_direction_mode="semantic": Uses BioLORD text embedding directions
 
 Usage:
-    python eval/pred_lorentz_random.py --config configs/lorentz_random.yaml --gpuids
-    python eval/pred_lorentz_random.py --config configs/lorentz_random.yaml --ckpt epoch_30.pth
-    python eval/pred_lorentz_random.py --config configs/lorentz_random.yaml --output eval/pred/lorentz_random_v2
-    python eval/pred_lorentz_random.py --config configs/L_R_FZ+cls0_0.3.yaml --output eval/pred/L_R_FZ+cla0_0.1
+    python eval/pred_LS_FZ10_cls0_0.1.py --config configs/L_S_FZ+cls0_0.3.yaml --output eval/pred/L_S_FZ+cls0_0.1
 """
 import argparse
 import json
@@ -27,10 +28,10 @@ from models.body_net import BodyNet
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run inference on test set with BodyNet")
-    parser.add_argument("--config", type=str, required=True, help="Path to YAML config")
+    parser = argparse.ArgumentParser(description="Run inference on test set with BodyNet (L_S_FZ+cls0_0.3)")
+    parser.add_argument("--config", type=str, default="configs/L_S_FZ+cls0_0.3.yaml", help="Path to YAML config")
     parser.add_argument("--ckpt", type=str, default="best.pth", help="Checkpoint filename")
-    parser.add_argument("--output", type=str, default="eval/pred/lorentz_random", help="Output directory")
+    parser.add_argument("--output", type=str, default="eval/pred/L_S_FZ+cls0_0.3", help="Output directory")
     parser.add_argument("--gpuids", type=int, default=0, help="GPU device ID to use")
     return parser.parse_args()
 
