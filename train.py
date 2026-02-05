@@ -457,6 +457,10 @@ def main():
     logger.info("-" * 60)
 
     for epoch in range(start_epoch, cfg.epochs):
+        # Set epoch for Curriculum Negative Mining (if supported by loss function)
+        if hasattr(hyp_criterion, 'set_epoch'):
+            hyp_criterion.set_epoch(epoch, cfg.epochs)
+
         # Freeze/unfreeze label embeddings based on epoch
         raw_model = model.module if hasattr(model, 'module') else model
         if cfg.hyp_freeze_epochs > 0:
