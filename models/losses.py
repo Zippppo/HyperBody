@@ -51,6 +51,78 @@ class DiceLoss(nn.Module):
         return 1.0 - mean_dice
 
 
+class MemoryEfficientDiceLoss(nn.Module):
+    """Multi-class Dice loss for 3D segmentation (memory-efficient).
+
+    Note: Using gather/scatter_add for memory efficiency, replaces
+    O(B*C*D*H*W) one-hot tensor with O(B*D*H*W) gather operations.
+    Mathematically equivalent to DiceLoss (one-hot version).
+    """
+
+    def __init__(self, smooth: float = 1.0):
+        """
+        Args:
+            smooth: Smoothing factor to avoid division by zero
+        """
+        super().__init__()
+        self.smooth = smooth
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            logits: (B, C, D, H, W) raw model output
+            targets: (B, D, H, W) ground truth labels (int64)
+
+        Returns:
+            Scalar Dice loss (1 - mean_dice)
+        """
+        B, num_classes = logits.shape[0], logits.shape[1]
+        N = targets[0].numel()  # D * H * W
+
+        # Force float32 for numerical stability in AMP
+        logits = logits.float()
+
+        # Softmax to get probabilities
+        probs = F.softmax(logits, dim=1)  # (B, C, D, H, W)
+
+        # Flatten spatial dimensions
+        probs_flat = probs.view(B, num_classes, N)  # (B, C, N)
+        targets_flat = targets.view(B, N)  # (B, N)
+
+        # --- Intersection via gather + scatter_add ---
+        # Gather probabilities at ground-truth class for each voxel
+        targets_idx = targets_flat.unsqueeze(1)  # (B, 1, N)
+        probs_at_target = probs_flat.gather(1, targets_idx).squeeze(1)  # (B, N)
+
+        # Accumulate per-class intersection
+        intersection = torch.zeros(
+            B, num_classes, device=logits.device, dtype=logits.dtype
+        )
+        intersection.scatter_add_(1, targets_flat, probs_at_target)  # (B, C)
+
+        # --- Union ---
+        # Probs side: sum of predicted probabilities per class
+        probs_sum = probs_flat.sum(dim=2)  # (B, C)
+
+        # Targets side: count of voxels per class via bincount
+        # Encode batch index into targets to vectorize bincount
+        offsets = torch.arange(B, device=targets.device) * num_classes  # (B,)
+        offset_targets = targets_flat + offsets.unsqueeze(1)  # (B, N)
+        targets_count = torch.bincount(
+            offset_targets.reshape(-1), minlength=B * num_classes
+        ).view(B, num_classes).to(dtype=logits.dtype)  # (B, C)
+
+        union = probs_sum + targets_count  # (B, C)
+
+        # Dice per class
+        dice_per_class = (2.0 * intersection + self.smooth) / (union + self.smooth)  # (B, C)
+
+        # Average over classes and batch
+        mean_dice = dice_per_class.mean()
+
+        return 1.0 - mean_dice
+
+
 class CombinedLoss(nn.Module):
     """Combined Cross-Entropy and Dice loss for 3D segmentation"""
 
@@ -75,7 +147,7 @@ class CombinedLoss(nn.Module):
         self.dice_weight = dice_weight
 
         self.ce_loss = nn.CrossEntropyLoss(weight=class_weights)
-        self.dice_loss = DiceLoss(smooth=smooth)
+        self.dice_loss = MemoryEfficientDiceLoss(smooth=smooth)
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
