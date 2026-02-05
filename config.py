@@ -76,7 +76,7 @@ class Config:
     def from_yaml(cls, yaml_path: str) -> "Config":
         """Load config from YAML file, overriding defaults."""
         cfg = cls()
-        with open(yaml_path, "r") as f:
+        with open(yaml_path, "r", encoding="utf-8") as f:
             yaml_cfg = yaml.safe_load(f)
 
         if yaml_cfg is None:

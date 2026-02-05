@@ -6,7 +6,7 @@ This model uses:
 - hyp_direction_mode="semantic": Uses BioLORD text embedding directions
 
 Usage:
-    python eval/pred_LS_FZ10_cls0_0.1.py --config configs/L_S_FZ+cls0_0.3.yaml --output eval/pred/L_S_FZ+cls0_0.1
+    python eval/pred_LS_FZ10_cls0_0.1.py --config configs/L_S_FZ+cls0_0.1.yaml --output eval/pred/L_S_FZ+cls0_0.1
 """
 import argparse
 import json

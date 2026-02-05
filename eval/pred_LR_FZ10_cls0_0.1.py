@@ -1,13 +1,13 @@
 """
-Prediction script for L_R_FZ+cls0_0.3 model (BodyNet with hyperbolic embedding + frozen text embeddings).
+Prediction script for L_R_FZ+cls0_0.1 model (BodyNet with hyperbolic embedding + frozen text embeddings).
 
 This model uses:
 - hyp_freeze_epochs=10: Text embeddings frozen for first 10 epochs
 - hyp_direction_mode="random": Random direction initialization
 
 Usage:
-    python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.3.yaml
-    python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.3.yaml --ckpt epoch_30.pth
+    python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.1.yaml --ckpt checkpoints/L_R_FZ+cls0_0.1/best.pth
+    python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.1.yaml --ckpt epoch_30.pth
     python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.1.yaml --output eval/pred/L_R_FZ+cls0_0.1
 """
 import argparse
@@ -30,10 +30,10 @@ from models.body_net import BodyNet
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run inference on test set with BodyNet (L_R_FZ+cls0_0.3)")
-    parser.add_argument("--config", type=str, default="configs/L_R_FZ+cls0_0.3.yaml", help="Path to YAML config")
+    parser = argparse.ArgumentParser(description="Run inference on test set with BodyNet (L_R_FZ+cls0_0.1)")
+    parser.add_argument("--config", type=str, default="configs/L_R_FZ+cls0_0.1.yaml", help="Path to YAML config")
     parser.add_argument("--ckpt", type=str, default="best.pth", help="Checkpoint filename")
-    parser.add_argument("--output", type=str, default="eval/pred/L_R_FZ+cls0_0.3", help="Output directory")
+    parser.add_argument("--output", type=str, default="eval/pred/L_R_FZ+cls0_0.1", help="Output directory")
     parser.add_argument("--gpuids", type=int, default=0, help="GPU device ID to use")
     return parser.parse_args()
 

@@ -18,7 +18,7 @@ Usage:
         --output checkpoints/class_weight_store/class_weights.pt
 
     # Compare different methods on current dataset
-    python tools/class_weight_calculator.py compare --num-samples 100
+    python tools/class_weight_calculator.py compare --num-samples 5000
 
     # View weights from a file
     python tools/class_weight_calculator.py view checkpoints/class_weight_store/class_weights.pt
@@ -93,9 +93,25 @@ def compute_weights_effective_number(
     """
     num_classes = len(class_counts)
 
+    # Rescale counts: normalize so that the smallest non-zero class has count=1.
+    # Raw voxel counts (billions) cause beta^n to underflow to 0 for all classes,
+    # destroying all discrimination. Rescaling preserves relative ratios while
+    # keeping values in a range where the formula is numerically effective.
+    nonzero_mask = class_counts > 0
+    if nonzero_mask.any():
+        min_nonzero = class_counts[nonzero_mask].min()
+        scaled_counts = class_counts / min_nonzero
+    else:
+        scaled_counts = class_counts.clone()
+
     # Compute effective number for each class
     # E_n = (1 - beta^n) / (1 - beta)
-    effective_num = (1.0 - torch.pow(beta, class_counts)) / (1.0 - beta)
+    # Use log-space to avoid underflow: beta^n = exp(n * log(beta))
+    log_beta = torch.tensor(beta, dtype=torch.float64).log()
+    beta_pow_n = torch.exp(scaled_counts * log_beta)
+    effective_num = (1.0 - beta_pow_n) / (1.0 - beta)
+    # Clamp to avoid division by zero for classes with very large counts
+    effective_num = torch.clamp(effective_num, min=1e-8)
 
     # Weight is inverse of effective number
     weights = 1.0 / effective_num
@@ -154,7 +170,7 @@ def compute_weights_log_dampened(
 
 def count_classes_from_dataset(
     num_classes: int = 70,
-    num_samples: int = 100,
+    num_samples: int = 5000,
 ) -> torch.Tensor:
     """
     Count class frequencies from dataset samples.
@@ -186,17 +202,20 @@ def count_classes_from_dataset(
 
     class_counts = torch.zeros(num_classes, dtype=torch.float64)
 
-    print(f"Counting class frequencies from {len(indices)} samples...")
+    total = len(indices)
+    log_interval = max(total // 20, 1)  # ~5% progress steps
+    print(f"Counting class frequencies from {total} samples...")
     for i, idx in enumerate(indices):
-        if (i + 1) % 10 == 0:
-            print(f"  Processing sample {i + 1}/{len(indices)}")
+        if (i + 1) % log_interval == 0 or (i + 1) == total:
+            print(f"  Processing sample {i + 1}/{total}")
 
         _, labels = dataset[idx]
-        if isinstance(labels, torch.Tensor):
-            labels = labels.numpy()
-
-        for c in range(num_classes):
-            class_counts[c] += (labels == c).sum()
+        if not isinstance(labels, torch.Tensor):
+            labels = torch.from_numpy(labels)
+        labels = labels.long().flatten()
+        # Vectorized bincount instead of per-class loop
+        counts = torch.bincount(labels, minlength=num_classes).double()
+        class_counts += counts[:num_classes]
 
     return class_counts
 
@@ -321,12 +340,12 @@ def main():
     )
     compute_parser.add_argument("--beta", type=float, default=0.99, help="Beta for effective_number method")
     compute_parser.add_argument("--dampening", type=float, default=10.0, help="Dampening factor for log_dampened")
-    compute_parser.add_argument("--num-samples", type=int, default=100, help="Number of samples to use")
+    compute_parser.add_argument("--num-samples", type=int, default=5000, help="Number of samples to use")
     compute_parser.add_argument("--output", "-o", required=True, help="Output path for weights")
 
     # Compare command
     compare_parser = subparsers.add_parser("compare", help="Compare different methods")
-    compare_parser.add_argument("--num-samples", type=int, default=100, help="Number of samples to use")
+    compare_parser.add_argument("--num-samples", type=int, default=5000, help="Number of samples to use")
 
     # View command
     view_parser = subparsers.add_parser("view", help="View weights from a file")

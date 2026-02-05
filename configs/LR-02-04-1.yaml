@@ -1,5 +1,6 @@
 # Default training configuration
 # Copy this file and modify for different experiments
+# 这个版本下，ribs的倍率放大两倍，class 0 
 
 # Data
 data_dir: "Dataset/voxel_data"
@@ -36,7 +37,7 @@ hyp_text_lr_ratio: 0.01  # Text embedding LR = base_lr * ratio
 hyp_text_grad_clip: 0.1  # Gradient clip for text embeddings (first unfreeze epoch)
 
 # Training
-batch_size: 2
+batch_size: 1
 num_workers: 0
 epochs: 120
 lr: 0.001
