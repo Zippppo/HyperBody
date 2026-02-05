@@ -20,11 +20,11 @@ from tqdm import tqdm
 
 from config import Config
 from data.dataset import HyperBodyDataset
-from data.organ_hierarchy import load_organ_hierarchy, load_class_to_system
+from data.organ_hierarchy import load_organ_hierarchy, load_class_to_system, compute_tree_distance_matrix
 from models.hyperbolic.embedding_tracker import EmbeddingTracker
 from models.body_net import BodyNet
 from models.losses import CombinedLoss, compute_class_weights
-from models.hyperbolic.lorentz_loss import LorentzRankingLoss
+from models.hyperbolic.lorentz_loss import LorentzRankingLoss, LorentzTreeRankingLoss
 from utils.metrics import DiceMetric
 from utils.checkpoint import save_checkpoint, load_checkpoint
 
@@ -377,15 +377,33 @@ def main():
     )
 
     # Hyperbolic ranking loss (with Curriculum Negative Mining)
-    hyp_criterion = LorentzRankingLoss(
-        margin=cfg.hyp_margin,
-        curv=cfg.hyp_curv,
-        num_samples_per_class=cfg.hyp_samples_per_class,
-        num_negatives=cfg.hyp_num_negatives,
-        t_start=cfg.hyp_t_start,
-        t_end=cfg.hyp_t_end,
-        warmup_epochs=cfg.hyp_warmup_epochs,
-    )
+    # Choose loss class based on hyp_distance_mode config
+    if cfg.hyp_distance_mode == "tree":
+        # Tree-based negative sampling: uses precomputed tree distances
+        tree_dist_matrix = compute_tree_distance_matrix(cfg.tree_file, class_names)
+        hyp_criterion = LorentzTreeRankingLoss(
+            tree_dist_matrix=tree_dist_matrix,
+            margin=cfg.hyp_margin,
+            curv=cfg.hyp_curv,
+            num_samples_per_class=cfg.hyp_samples_per_class,
+            num_negatives=cfg.hyp_num_negatives,
+            t_start=cfg.hyp_t_start,
+            t_end=cfg.hyp_t_end,
+            warmup_epochs=cfg.hyp_warmup_epochs,
+        )
+        logger.info(f"Using LorentzTreeRankingLoss (tree distance mode)")
+    else:
+        # Default: Hyperbolic distance-based negative sampling
+        hyp_criterion = LorentzRankingLoss(
+            margin=cfg.hyp_margin,
+            curv=cfg.hyp_curv,
+            num_samples_per_class=cfg.hyp_samples_per_class,
+            num_negatives=cfg.hyp_num_negatives,
+            t_start=cfg.hyp_t_start,
+            t_end=cfg.hyp_t_end,
+            warmup_epochs=cfg.hyp_warmup_epochs,
+        )
+        logger.info(f"Using LorentzRankingLoss (hyperbolic distance mode)")
 
     # Separate param groups for visual and text embeddings (differential LR)
     raw_model = model.module if hasattr(model, 'module') else model
