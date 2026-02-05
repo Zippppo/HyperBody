@@ -30,6 +30,10 @@ class LorentzRankingLoss(nn.Module):
         curv: float = 1.0,
         num_samples_per_class: int = 64,
         num_negatives: int = 8,
+        # Curriculum Negative Mining parameters
+        t_start: float = 2.0,
+        t_end: float = 0.1,
+        warmup_epochs: int = 5,
     ):
         """
         Args:
@@ -37,12 +41,51 @@ class LorentzRankingLoss(nn.Module):
             curv: Curvature (for distance computation)
             num_samples_per_class: Max voxels to sample per class
             num_negatives: Number of negative classes per anchor
+            t_start: Initial temperature for curriculum sampling (high = more random)
+            t_end: Final temperature for curriculum sampling (low = more hard negatives)
+            warmup_epochs: Number of epochs to use uniform random sampling before curriculum
         """
         super().__init__()
         self.margin = margin
         self.curv = curv
         self.num_samples_per_class = num_samples_per_class
         self.num_negatives = num_negatives
+        self.t_start = t_start
+        self.t_end = t_end
+        self.warmup_epochs = warmup_epochs
+
+        # Register buffers for epoch tracking (saved/loaded with model state)
+        self.register_buffer('current_epoch', torch.tensor(0, dtype=torch.long))
+        self.register_buffer('max_epochs', torch.tensor(100, dtype=torch.long))
+
+    def set_epoch(self, epoch: int, max_epochs: int):
+        """Set current epoch for curriculum scheduling."""
+        self.current_epoch.fill_(epoch)
+        self.max_epochs.fill_(max_epochs)
+
+    def get_temperature(self) -> float:
+        """
+        Get current temperature for curriculum negative mining.
+
+        During warmup (epoch < warmup_epochs): returns t_start
+        After warmup: exponential decay from t_start to t_end
+        """
+        epoch = self.current_epoch.item()
+        max_epochs = self.max_epochs.item()
+
+        # During warmup, return t_start
+        if epoch < self.warmup_epochs:
+            return self.t_start
+
+        # After warmup: exponential decay
+        # progress = (epoch - warmup_epochs) / (max_epochs - warmup_epochs)
+        # clamp progress to [0, 1]
+        progress = (epoch - self.warmup_epochs) / max(max_epochs - self.warmup_epochs, 1)
+        progress = min(max(progress, 0.0), 1.0)
+
+        # t = t_start * (t_end / t_start)^progress
+        temperature = self.t_start * (self.t_end / self.t_start) ** progress
+        return temperature
 
     def forward(
         self,
@@ -136,17 +179,36 @@ class LorentzRankingLoss(nn.Module):
         class_indices = torch.arange(num_classes, device=device)  # [num_classes]
         neg_mask = class_indices.unsqueeze(0) != sampled_classes.unsqueeze(1)  # [K, num_classes]
 
-        # For each anchor, randomly select num_negatives from valid negatives
-        # Generate random scores and mask out invalid negatives
-        neg_scores = torch.rand(K, num_classes, device=device)
-        neg_scores = torch.where(neg_mask, neg_scores, torch.tensor(-1.0, device=device))
-
+        # Curriculum negative sampling
         # Get top-k negative indices for each anchor
         n_neg = min(self.num_negatives, num_classes - 1)
         if n_neg <= 0:
             return torch.tensor(0.0, device=device, requires_grad=True)
 
-        _, neg_indices = torch.topk(neg_scores, n_neg, dim=1)  # [K, n_neg]
+        with torch.no_grad():
+            all_dists_f32 = all_dists.float()
+            epoch = self.current_epoch.item()
+
+            if epoch < self.warmup_epochs:
+                # Warmup: uniform random sampling
+                neg_weights = torch.where(
+                    neg_mask,
+                    torch.ones_like(all_dists_f32),
+                    torch.zeros_like(all_dists_f32)
+                )
+            else:
+                # Curriculum: distance-weighted sampling with temperature
+                # Lower temperature = prefer harder negatives (closer ones)
+                temperature = self.get_temperature()
+                neg_weights = torch.where(
+                    neg_mask,
+                    torch.exp(-all_dists_f32 / temperature),
+                    torch.zeros_like(all_dists_f32)
+                )
+
+            # Normalize weights to form probability distribution
+            neg_weights = neg_weights / neg_weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
+            neg_indices = torch.multinomial(neg_weights, n_neg, replacement=False)
 
         # Gather negative distances
         d_neg = torch.gather(all_dists, 1, neg_indices)  # [K, n_neg]
