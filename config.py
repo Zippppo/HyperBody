@@ -30,6 +30,10 @@ class Config:
     hyp_margin: float = 0.1       # Triplet margin
     hyp_samples_per_class: int = 64
     hyp_num_negatives: int = 8    # Negative classes per anchor
+    # Curriculum Negative Mining
+    hyp_t_start: float = 2.0      # Initial temperature (high = random)
+    hyp_t_end: float = 0.1        # Final temperature (low = hard negatives)
+    hyp_warmup_epochs: int = 5    # Pure random sampling for first N epochs
     hyp_min_radius: float = 0.1   # Shallow organ init norm
     hyp_max_radius: float = 2.0   # Deep organ init norm
     hyp_direction_mode: str = "random"  # "random" or "semantic"

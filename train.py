@@ -376,12 +376,15 @@ def main():
         class_weights=class_weights,
     )
 
-    # Hyperbolic ranking loss
+    # Hyperbolic ranking loss (with Curriculum Negative Mining)
     hyp_criterion = LorentzRankingLoss(
         margin=cfg.hyp_margin,
         curv=cfg.hyp_curv,
         num_samples_per_class=cfg.hyp_samples_per_class,
         num_negatives=cfg.hyp_num_negatives,
+        t_start=cfg.hyp_t_start,
+        t_end=cfg.hyp_t_end,
+        warmup_epochs=cfg.hyp_warmup_epochs,
     )
 
     # Separate param groups for visual and text embeddings (differential LR)
