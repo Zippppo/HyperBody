@@ -11,6 +11,8 @@ The tree.json defines anatomical hierarchy:
 import json
 from typing import Dict, List, Optional
 
+import torch
+
 
 def _find_depth_recursive(
     tree: dict,
@@ -176,3 +178,107 @@ def get_depth_stats(depths: Dict[int, int]) -> Dict[str, int]:
         "max_depth": max(depth_values),
         "unique_depths": len(set(depth_values)),
     }
+
+
+def _get_ancestor_path(tree: dict, target_name: str) -> Optional[List[str]]:
+    """
+    Get the full ancestor path from root to target class (including the class key itself).
+
+    This is a wrapper around _find_system_recursive that ensures consistent behavior.
+
+    Args:
+        tree: The full hierarchy tree dictionary
+        target_name: Class name to find
+
+    Returns:
+        List of keys from root to the target, or None if not found
+    """
+    return _find_system_recursive(tree, target_name, None, 0)
+
+
+def _find_lca_depth(path1: List[str], path2: List[str]) -> int:
+    """
+    Find the depth of the Lowest Common Ancestor (LCA) of two paths.
+
+    The depth is the length of the longest common prefix of the two paths.
+
+    Args:
+        path1: Ancestor path for first class
+        path2: Ancestor path for second class
+
+    Returns:
+        Depth of the LCA (1-indexed, so root = depth 1)
+    """
+    lca_depth = 0
+    for i in range(min(len(path1), len(path2))):
+        if path1[i] == path2[i]:
+            lca_depth = i + 1  # 1-indexed depth
+        else:
+            break
+    return lca_depth
+
+
+def compute_tree_distance_matrix(
+    tree_path: str,
+    class_names: List[str]
+) -> torch.Tensor:
+    """
+    Compute pairwise tree distances between all classes based on hierarchy.
+
+    Tree distance formula:
+        tree_dist(i, j) = depth_i + depth_j - 2 * depth_LCA
+
+    Where:
+        - depth_i, depth_j are the depths of classes i and j in the tree
+        - depth_LCA is the depth of the Lowest Common Ancestor
+
+    Args:
+        tree_path: Path to tree.json hierarchy file
+        class_names: List of class names (index = class_idx)
+
+    Returns:
+        Tensor of shape [num_classes, num_classes] with dtype=float32,
+        symmetric, with diagonal = 0
+    """
+    with open(tree_path, "r") as f:
+        tree = json.load(f)
+
+    num_classes = len(class_names)
+
+    # Step 1: Compute ancestor paths for all classes
+    paths: List[Optional[List[str]]] = []
+    for name in class_names:
+        path = _get_ancestor_path(tree, name)
+        paths.append(path)
+
+    # Step 2: Compute depths for all classes (path length)
+    depths = []
+    for path in paths:
+        if path is None:
+            # Default depth for classes not in tree
+            depths.append(1)
+        else:
+            depths.append(len(path))
+
+    # Step 3: Compute pairwise tree distances
+    # Use vectorized approach where possible
+    dist_matrix = torch.zeros(num_classes, num_classes, dtype=torch.float32)
+
+    for i in range(num_classes):
+        for j in range(i + 1, num_classes):
+            path_i = paths[i]
+            path_j = paths[j]
+
+            if path_i is None or path_j is None:
+                # If either class is not in tree, use sum of depths as max distance
+                dist = depths[i] + depths[j]
+            else:
+                lca_depth = _find_lca_depth(path_i, path_j)
+                dist = depths[i] + depths[j] - 2 * lca_depth
+
+            dist_matrix[i, j] = dist
+            dist_matrix[j, i] = dist  # Symmetric
+
+    # Diagonal is already 0 from initialization
+
+    return dist_matrix
