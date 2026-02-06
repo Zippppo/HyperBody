@@ -42,7 +42,8 @@ hyp_distance_mode: "graph"  # Use graph distance (tree + spatial adjacency)
 spatial_dilation_radius: 3  # Cube dilation radius
 spatial_lambda: 1.0  # Spatial edge scale factor
 spatial_epsilon: 0.01  # Prevents division by zero
-spatial_contact_matrix: "checkpoints/LR-Curriculum-GraphDistance/contact_matrix.pt"  # Empty = compute from dataset and cache
+spatial_contact_matrix: "checkpoints/LR-Curriculum-GraphDistance/contact_matrix.pt"  # Deprecated for graph mode; kept for compatibility
+graph_distance_matrix: "Dataset/graph_distance_matrix.pt"
 
 # Training
 batch_size: 2

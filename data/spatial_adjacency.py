@@ -1,10 +1,16 @@
 """Compute spatial adjacency (contact) matrix between organs from GT labels."""
 
+import logging
+
 from typing import Iterable, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
+
+logger = logging.getLogger(__name__)
 
 
 _IGNORED_SPATIAL_CLASS_NAMES = {
@@ -172,6 +178,7 @@ def compute_contact_matrix_from_dataset(
     num_workers: int = 0,
     class_batch_size: int = 0,
     ignored_class_indices: Optional[Iterable[int]] = None,
+    show_progress: bool = False,
 ) -> torch.Tensor:
     """Aggregate asymmetric contact matrix over all samples in a dataset."""
     ignored_class_indices = _normalize_ignored_class_indices(num_classes, ignored_class_indices)
@@ -180,8 +187,14 @@ def compute_contact_matrix_from_dataset(
     global_volume = torch.zeros((num_classes,), dtype=torch.float64)
 
     loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=num_workers)
+    total = len(loader)
+    last_logged_decile = -1
 
-    for _, lbl in loader:
+    iterator = loader
+    if show_progress:
+        iterator = tqdm(loader, total=total, desc="Contact matrix", unit="sample")
+
+    for index, (_, lbl) in enumerate(iterator):
         labels = lbl.squeeze(0).long()
         overlap, volume = _compute_single_sample_overlap(
             labels=labels,
@@ -192,6 +205,18 @@ def compute_contact_matrix_from_dataset(
         )
         global_overlap += overlap.double().cpu()
         global_volume += volume.double().cpu()
+
+        if total > 0:
+            progress_percent = (100 * (index + 1)) // total
+            decile = progress_percent // 10
+            if decile > last_logged_decile or progress_percent == 100:
+                logger.info(
+                    "Contact matrix: %d/%d samples (%d%%)",
+                    index + 1,
+                    total,
+                    progress_percent,
+                )
+                last_logged_decile = decile
 
     contact_matrix = global_overlap / global_volume.unsqueeze(1).clamp(min=1.0)
     contact_matrix = contact_matrix.clamp(min=0.0, max=1.0)

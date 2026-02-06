@@ -1151,3 +1151,50 @@ Task 1 → Task 2 → Task 3 → Task 4
 ```
 
 Tasks 4, 5, 6 are independent of each other (all depend on Tasks 1-3).
+
+---
+
+## Graph Mode Quickstart (Post-Upgrade)
+
+After this upgrade, `train.py` in `hyp_distance_mode: "graph"` no longer computes
+contact/graph distance matrices at runtime. It must load a precomputed
+`graph_distance_matrix.pt`.
+
+### Step 1: Precompute
+
+```bash
+python scripts/precompute_graph_distance.py \
+  --output-dir Dataset \
+  --tree-file Dataset/tree.json \
+  --data-dir Dataset/voxel_data \
+  --split-file Dataset/dataset_split.json \
+  --dataset-info Dataset/dataset_info.json \
+  --volume-size 144 128 268 \
+  --dilation-radius 3 \
+  --lambda 1.0 \
+  --epsilon 0.01 \
+  --class-batch-size 0 \
+  --num-workers 0
+```
+
+Artifacts:
+- `Dataset/contact_matrix.pt`
+- `Dataset/graph_distance_matrix.pt`
+
+### Step 2: Configure and Train
+
+```yaml
+hyp_distance_mode: "graph"
+graph_distance_matrix: "Dataset/graph_distance_matrix.pt"
+```
+
+```bash
+python train.py --config configs/LR-Curriculum-GraphDistance.yaml
+```
+
+### Common Errors
+
+- `FileNotFoundError: Graph distance mode requires precomputed graph_distance_matrix`
+  - `graph_distance_matrix` is empty or points to a missing file.
+- `graph_distance_matrix shape (...) != (num_classes, num_classes)`
+  - Precomputed file and current config use different class definitions.

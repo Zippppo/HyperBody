@@ -235,6 +235,33 @@ class TestComputeContactMatrixFromDataset:
         assert torch.allclose(contact[:, 0], torch.zeros(num_classes))
         assert contact[1, 2].item() > 0.0
 
+    def test_progress_logging(self, caplog):
+        """compute_contact_matrix_from_dataset should emit progress log messages."""
+        import logging
+
+        from data.spatial_adjacency import compute_contact_matrix_from_dataset
+
+        num_classes = 3
+        samples = []
+        for _ in range(10):
+            labels = torch.zeros(10, 10, 10, dtype=torch.long)
+            labels[2:5, 2:5, 2:5] = 1
+            labels[6:9, 6:9, 6:9] = 2
+            samples.append(labels)
+
+        dataset = self._make_fake_dataset(samples)
+
+        with caplog.at_level(logging.INFO, logger="data.spatial_adjacency"):
+            compute_contact_matrix_from_dataset(
+                dataset,
+                num_classes=num_classes,
+                dilation_radius=1,
+            )
+
+        progress_msgs = [record for record in caplog.records if "Contact matrix:" in record.message]
+        assert len(progress_msgs) > 0, "Should emit at least one progress log message"
+        assert "100%" in progress_msgs[-1].message
+
 class TestComputeGraphDistanceMatrix:
     """Test compute_graph_distance_matrix() - fusion of tree + spatial."""
 

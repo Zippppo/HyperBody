@@ -1,4 +1,8 @@
-"""Precompute spatial contact matrix from training set ground truth labels."""
+"""Deprecated: precompute spatial contact matrix only.
+
+Prefer scripts/precompute_graph_distance.py to generate both
+contact_matrix.pt and graph_distance_matrix.pt in one run.
+"""
 
 import argparse
 import json
@@ -78,6 +82,7 @@ def main() -> None:
         num_workers=args.num_workers,
         class_batch_size=args.class_batch_size,
         ignored_class_indices=ignored_class_indices,
+        show_progress=True,
     )
     elapsed = time.time() - start
 

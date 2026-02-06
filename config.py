@@ -48,6 +48,7 @@ class Config:
     spatial_lambda: float = 1.0  # Scale factor for spatial edge distance
     spatial_epsilon: float = 0.01  # Prevents division by zero in contact->distance
     spatial_contact_matrix: str = ""  # Path to precomputed contact_matrix.pt (empty = compute)
+    graph_distance_matrix: str = ""  # Path to precomputed graph_distance_matrix.pt
 
     # Training
     batch_size: int = 1  # per GPU
