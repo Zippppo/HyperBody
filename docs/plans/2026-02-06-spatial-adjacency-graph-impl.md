@@ -1173,8 +1173,8 @@ python scripts/precompute_graph_distance.py \
   --dilation-radius 3 \
   --lambda 1.0 \
   --epsilon 0.01 \
-  --class-batch-size 0 \
-  --num-workers 0
+  --class-batch-size 5 \
+  --num-workers 16
 ```
 
 Artifacts:
