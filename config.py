@@ -41,7 +41,13 @@ class Config:
     hyp_freeze_epochs: int = 0  # Freeze label embeddings for first N epochs (0 = no freeze)
     hyp_text_lr_ratio: float = 0.01  # Text embedding LR = base_lr * ratio
     hyp_text_grad_clip: float = 0.1  # Gradient clip for text embeddings (first unfreeze epoch)
-    hyp_distance_mode: str = "hyperbolic"  # Distance mode for negative sampling: "hyperbolic" or "tree"
+    hyp_distance_mode: str = "hyperbolic"  # Distance mode for negative sampling: "hyperbolic", "tree", or "graph"
+
+    # Spatial adjacency (for hyp_distance_mode="graph")
+    spatial_dilation_radius: int = 3  # Cube dilation radius in voxels
+    spatial_lambda: float = 1.0  # Scale factor for spatial edge distance
+    spatial_epsilon: float = 0.01  # Prevents division by zero in contact->distance
+    spatial_contact_matrix: str = ""  # Path to precomputed contact_matrix.pt (empty = compute)
 
     # Training
     batch_size: int = 1  # per GPU

@@ -21,6 +21,11 @@ from tqdm import tqdm
 from config import Config
 from data.dataset import HyperBodyDataset
 from data.organ_hierarchy import load_organ_hierarchy, load_class_to_system, compute_tree_distance_matrix
+from data.spatial_adjacency import (
+    compute_contact_matrix_from_dataset,
+    compute_graph_distance_matrix,
+    infer_ignored_spatial_class_indices,
+)
 from models.hyperbolic.embedding_tracker import EmbeddingTracker
 from models.body_net import BodyNet
 from models.losses import CombinedLoss, compute_class_weights
@@ -336,6 +341,12 @@ def main():
     # Load organ hierarchy for hyperbolic embeddings
     with open(cfg.dataset_info_file) as f:
         class_names = json.load(f)["class_names"]
+    ignored_spatial_class_indices = infer_ignored_spatial_class_indices(class_names)
+    if ignored_spatial_class_indices:
+        logger.info(
+            "Ignoring spatial adjacency for classes: "
+            f"{ignored_spatial_class_indices} (inside_body_empty)"
+        )
     class_depths = load_organ_hierarchy(cfg.tree_file, class_names)
     class_to_system = load_class_to_system(cfg.tree_file, class_names) 
 
@@ -392,6 +403,54 @@ def main():
             warmup_epochs=cfg.hyp_warmup_epochs,
         )
         logger.info(f"Using LorentzTreeRankingLoss (tree distance mode)")
+    elif cfg.hyp_distance_mode == "graph":
+        # Graph-based negative sampling: tree distance + spatial adjacency.
+        D_tree = compute_tree_distance_matrix(cfg.tree_file, class_names)
+
+        if cfg.spatial_contact_matrix and os.path.exists(cfg.spatial_contact_matrix):
+            contact_matrix = torch.load(cfg.spatial_contact_matrix, map_location="cpu")
+            logger.info(f"Loaded contact matrix from {cfg.spatial_contact_matrix}")
+        else:
+            logger.info("Computing contact matrix from training set ground truth...")
+            contact_matrix = compute_contact_matrix_from_dataset(
+                train_dataset,
+                num_classes=cfg.num_classes,
+                dilation_radius=cfg.spatial_dilation_radius,
+                num_workers=cfg.num_workers,
+                ignored_class_indices=ignored_spatial_class_indices,
+            )
+            os.makedirs(cfg.checkpoint_dir, exist_ok=True)
+            cache_path = os.path.join(cfg.checkpoint_dir, "contact_matrix.pt")
+            torch.save(contact_matrix, cache_path)
+            logger.info(f"Saved contact matrix to {cache_path}")
+
+        if ignored_spatial_class_indices:
+            ignored_tensor = torch.as_tensor(ignored_spatial_class_indices, dtype=torch.long)
+            contact_matrix = contact_matrix.clone()
+            contact_matrix.index_fill_(0, ignored_tensor, 0.0)
+            contact_matrix.index_fill_(1, ignored_tensor, 0.0)
+
+        graph_dist_matrix = compute_graph_distance_matrix(
+            D_tree,
+            contact_matrix,
+            lambda_=cfg.spatial_lambda,
+            epsilon=cfg.spatial_epsilon,
+            ignored_class_indices=ignored_spatial_class_indices,
+        )
+        shortened_pairs = (D_tree - graph_dist_matrix > 0).sum().item()
+        logger.info(f"Graph distance matrix built: {shortened_pairs} directed pairs shortened")
+
+        hyp_criterion = LorentzTreeRankingLoss(
+            tree_dist_matrix=graph_dist_matrix,
+            margin=cfg.hyp_margin,
+            curv=cfg.hyp_curv,
+            num_samples_per_class=cfg.hyp_samples_per_class,
+            num_negatives=cfg.hyp_num_negatives,
+            t_start=cfg.hyp_t_start,
+            t_end=cfg.hyp_t_end,
+            warmup_epochs=cfg.hyp_warmup_epochs,
+        )
+        logger.info("Using LorentzTreeRankingLoss (graph distance mode)")
     else:
         # Default: Hyperbolic distance-based negative sampling
         hyp_criterion = LorentzRankingLoss(
