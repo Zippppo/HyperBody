@@ -55,9 +55,9 @@ lr_patience: 10
 lr_factor: 0.5
 
 # Checkpoint
-checkpoint_dir: "checkpoints/L_S_FZ+cls0_0.1"
+checkpoint_dir: "checkpoints/LS-A100"
 save_every: 10
-log_dir: "runs/L_S_FZ+cls0_0.1"
+log_dir: "runs/LS-A100"
 
 # GPU
 gpu_ids: [0, 1]
