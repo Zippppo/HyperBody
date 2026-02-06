@@ -1,5 +1,6 @@
 """Tests for spatial adjacency: contact matrix computation and distance fusion."""
 
+import pytest
 import torch
 
 
@@ -483,3 +484,125 @@ class TestGraphDistanceIntegration:
 
         assert D_final[0, 1].item() < 5.0, "High contact should shorten distance"
         assert D_final[1, 0].item() > 5.0, "Low contact should not shorten much"
+
+
+_requires_cuda = pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA not available"
+)
+
+
+@_requires_cuda
+class TestGPUAcceleration:
+    """Test GPU acceleration for spatial adjacency computation."""
+
+    def test_single_sample_overlap_gpu_matches_cpu(self):
+        """GPU and CPU results should be numerically identical."""
+        from data.spatial_adjacency import _compute_single_sample_overlap
+
+        num_classes = 4
+        labels = torch.zeros(20, 20, 20, dtype=torch.long)
+        labels[3:8, 3:12, 3:12] = 1
+        labels[8:13, 3:12, 3:12] = 2
+        labels[15:19, 15:19, 15:19] = 3
+
+        overlap_cpu, volume_cpu = _compute_single_sample_overlap(
+            labels, num_classes=num_classes, dilation_radius=2
+        )
+
+        overlap_gpu, volume_gpu = _compute_single_sample_overlap(
+            labels.cuda(), num_classes=num_classes, dilation_radius=2
+        )
+
+        assert torch.allclose(overlap_cpu, overlap_gpu.cpu()), (
+            f"Overlap mismatch:\nCPU:\n{overlap_cpu}\nGPU:\n{overlap_gpu.cpu()}"
+        )
+        assert torch.allclose(volume_cpu, volume_gpu.cpu()), (
+            f"Volume mismatch:\nCPU:\n{volume_cpu}\nGPU:\n{volume_gpu.cpu()}"
+        )
+
+    def test_single_sample_overlap_chunked_gpu_matches_cpu(self):
+        """Chunked path: GPU and CPU results should be numerically identical."""
+        from data.spatial_adjacency import _compute_single_sample_overlap
+
+        num_classes = 4
+        labels = torch.zeros(20, 20, 20, dtype=torch.long)
+        labels[3:8, 3:12, 3:12] = 1
+        labels[8:13, 3:12, 3:12] = 2
+        labels[15:19, 15:19, 15:19] = 3
+
+        overlap_cpu, volume_cpu = _compute_single_sample_overlap(
+            labels, num_classes=num_classes, dilation_radius=2, class_batch_size=2
+        )
+
+        overlap_gpu, volume_gpu = _compute_single_sample_overlap(
+            labels.cuda(), num_classes=num_classes, dilation_radius=2, class_batch_size=2
+        )
+
+        assert torch.allclose(overlap_cpu, overlap_gpu.cpu()), (
+            f"Chunked overlap mismatch:\nCPU:\n{overlap_cpu}\nGPU:\n{overlap_gpu.cpu()}"
+        )
+        assert torch.allclose(volume_cpu, volume_gpu.cpu()), (
+            f"Chunked volume mismatch:\nCPU:\n{volume_cpu}\nGPU:\n{volume_gpu.cpu()}"
+        )
+
+    def _make_fake_dataset(self, samples):
+        """Create a minimal list-like dataset returning (inp, lbl) tuples."""
+
+        class FakeDataset:
+            def __init__(self, label_list):
+                self.label_list = label_list
+
+            def __len__(self):
+                return len(self.label_list)
+
+            def __getitem__(self, idx):
+                lbl = self.label_list[idx]
+                inp = torch.zeros(1, *lbl.shape)
+                return inp, lbl
+
+        return FakeDataset(samples)
+
+    def test_contact_matrix_from_dataset_gpu(self):
+        """Dataset-level GPU computation should match CPU result."""
+        from data.spatial_adjacency import compute_contact_matrix_from_dataset
+
+        num_classes = 3
+        lbl1 = torch.zeros(20, 20, 20, dtype=torch.long)
+        lbl1[5:10, 5:15, 5:15] = 1
+        lbl1[10:15, 5:15, 5:15] = 2
+
+        lbl2 = torch.zeros(20, 20, 20, dtype=torch.long)
+        lbl2[5:15, 5:15, 5:15] = 1
+
+        dataset = self._make_fake_dataset([lbl1, lbl2])
+
+        contact_cpu = compute_contact_matrix_from_dataset(
+            dataset, num_classes=num_classes, dilation_radius=2
+        )
+        contact_gpu = compute_contact_matrix_from_dataset(
+            dataset, num_classes=num_classes, dilation_radius=2,
+            device=torch.device("cuda"),
+        )
+
+        assert torch.allclose(contact_cpu, contact_gpu, rtol=1e-5), (
+            f"Contact matrix mismatch:\nCPU:\n{contact_cpu}\nGPU:\n{contact_gpu}"
+        )
+
+    def test_contact_matrix_output_on_cpu(self):
+        """Even with device=cuda, returned contact_matrix should be on CPU."""
+        from data.spatial_adjacency import compute_contact_matrix_from_dataset
+
+        num_classes = 3
+        lbl = torch.zeros(10, 10, 10, dtype=torch.long)
+        lbl[2:5, 2:5, 2:5] = 1
+        lbl[5:8, 5:8, 5:8] = 2
+
+        dataset = self._make_fake_dataset([lbl])
+        contact = compute_contact_matrix_from_dataset(
+            dataset, num_classes=num_classes, dilation_radius=2,
+            device=torch.device("cuda"),
+        )
+
+        assert contact.device == torch.device("cpu"), (
+            f"Expected CPU output, got {contact.device}"
+        )
