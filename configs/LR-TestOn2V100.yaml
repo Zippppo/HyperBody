@@ -1,5 +1,5 @@
-# Training configuration for tree distance-based negative sampling
-# Uses tree hierarchy distance for negative sampling instead of hyperbolic distance
+# Default training configuration
+# Copy this file and modify for different experiments
 
 # Data
 data_dir: "Dataset/voxel_data"
@@ -27,10 +27,6 @@ hyp_weight: 0.05
 hyp_margin: 0.1
 hyp_samples_per_class: 64
 hyp_num_negatives: 8
-# Curriculum Negative Mining
-hyp_t_start: 2.0          # Initial temperature (high = random sampling)
-hyp_t_end: 0.1            # Final temperature (low = hard negative mining)
-hyp_warmup_epochs: 5      # Pure random sampling for first N epochs
 hyp_min_radius: 0.1
 hyp_max_radius: 2.0
 hyp_direction_mode: "random"  # "random" or "semantic"
@@ -38,7 +34,6 @@ hyp_text_embedding_path: "Dataset/text_embeddings/sat_label_embeddings.pt"
 hyp_freeze_epochs: 10  # Freeze label embeddings for first N epochs
 hyp_text_lr_ratio: 0.01  # Text embedding LR = base_lr * ratio
 hyp_text_grad_clip: 0.1  # Gradient clip for text embeddings (first unfreeze epoch)
-hyp_distance_mode: "tree"  # Use tree distance for negative sampling
 
 # Training
 batch_size: 1
@@ -60,9 +55,9 @@ lr_patience: 10
 lr_factor: 0.5
 
 # Checkpoint
-checkpoint_dir: "checkpoints/LR-Curriculum-TreeDistance"
+checkpoint_dir: "checkpoints/LR-TestOn2V100"
 save_every: 10
-log_dir: "runs/LR-Curriculum-TreeDistance"
+log_dir: "runs/LR-TestOn2V100"
 
 # GPU
 gpu_ids: [0, 1]

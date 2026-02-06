@@ -405,6 +405,9 @@ def main():
         )
         logger.info(f"Using LorentzRankingLoss (hyperbolic distance mode)")
 
+    # Move hyp_criterion to device (required for registered buffers like tree_dist_matrix)
+    hyp_criterion = hyp_criterion.to(device)
+
     # Separate param groups for visual and text embeddings (differential LR)
     raw_model = model.module if hasattr(model, 'module') else model
     visual_params = [p for n, p in raw_model.named_parameters() if 'label_emb' not in n]
