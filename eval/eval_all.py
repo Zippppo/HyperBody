@@ -75,8 +75,8 @@ def evaluate_model(pred_dir, gt_dir, num_classes):
             gt_labels = pad_labels(gt_labels, volume_size)
 
         # Convert to tensors and update metric
-        pred_tensor = torch.from_numpy(pred_labels).unsqueeze(0)  # (1, X, Y, Z)
-        gt_tensor = torch.from_numpy(gt_labels).unsqueeze(0)  # (1, X, Y, Z)
+        pred_tensor = torch.from_numpy(pred_labels).long().unsqueeze(0)  # (1, X, Y, Z)
+        gt_tensor = torch.from_numpy(gt_labels).long().unsqueeze(0)  # (1, X, Y, Z)
 
         # Create fake logits for DiceMetric (it expects logits and does argmax)
         # We already have argmax, so create one-hot-like logits
