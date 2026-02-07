@@ -21,3 +21,5 @@ merged.zip
 /.codex/
 /configs/
 /slurm/
+*.log
+logs/
