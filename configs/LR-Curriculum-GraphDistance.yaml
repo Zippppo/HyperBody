@@ -66,7 +66,7 @@ lr_factor: 0.5
 
 # Checkpoint
 checkpoint_dir: "checkpoints/LR-Curriculum-GraphDistance"
-save_every: 10
+save_every: 1
 log_dir: "runs/LR-Curriculum-GraphDistance"
 
 # GPU

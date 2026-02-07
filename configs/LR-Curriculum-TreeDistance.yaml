@@ -68,7 +68,7 @@ log_dir: "runs/LR-Curriculum-TreeDistance"
 gpu_ids: [0, 1]
 
 # Resume (empty string means start fresh)
-resume: ""
+resume: "checkpoints/LR-Curriculum-TreeDistance/latest.pth"
 
 # Embedding tracking (visualize label embedding evolution)
 track_embeddings: true
