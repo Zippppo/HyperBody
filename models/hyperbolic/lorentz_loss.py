@@ -12,6 +12,23 @@ from typing import Optional
 from models.hyperbolic.lorentz_ops import pointwise_dist, pairwise_dist
 
 
+def _normalize_sampling_weights(weights: Tensor, neg_mask: Tensor) -> Tensor:
+    """Convert raw negative-sampling weights into valid multinomial probabilities."""
+    probs = torch.nan_to_num(weights, nan=0.0, posinf=0.0, neginf=0.0)
+    probs = torch.clamp(probs, min=0.0)
+
+    row_sums = probs.sum(dim=1, keepdim=True)
+    invalid_rows = row_sums.squeeze(1) <= 0
+    if invalid_rows.any():
+        # Fallback to uniform sampling over valid negatives for pathological rows.
+        fallback = neg_mask[invalid_rows].to(dtype=probs.dtype)
+        fallback = fallback / fallback.sum(dim=1, keepdim=True).clamp(min=1e-8)
+        probs[invalid_rows] = fallback
+        row_sums = probs.sum(dim=1, keepdim=True)
+
+    return probs / row_sums.clamp(min=1e-8)
+
+
 class LorentzRankingLoss(nn.Module):
     """
     Triplet ranking loss in Lorentz hyperbolic space.
@@ -104,123 +121,125 @@ class LorentzRankingLoss(nn.Module):
         Returns:
             Scalar loss
         """
-        # Force float32 for numerical stability (AMP compatibility)
-        voxel_emb = voxel_emb.float()
-        label_emb = label_emb.float()
+        # Keep hyperbolic distance computation in FP32: AMP autocast can downcast
+        # matrix multiplications in pairwise_dist to FP16 and overflow to inf/nan.
+        with torch.autocast(device_type=voxel_emb.device.type, enabled=False):
+            voxel_emb = voxel_emb.float()
+            label_emb = label_emb.float()
 
-        device = voxel_emb.device
-        B, C, D, H, W = voxel_emb.shape
-        num_classes = label_emb.shape[0]
+            device = voxel_emb.device
+            B, C, D, H, W = voxel_emb.shape
+            num_classes = label_emb.shape[0]
 
-        # Reshape: (B, C, D, H, W) -> (N, C) where N = B*D*H*W
-        voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, C)  # (N, C)
-        labels_flat = labels.reshape(-1)  # (N)
+            # Reshape: (B, C, D, H, W) -> (N, C) where N = B*D*H*W
+            voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, C)  # (N, C)
+            labels_flat = labels.reshape(-1)  # (N)
 
-        # Fully vectorized sampling: sample up to num_samples_per_class per class
-        N = labels_flat.shape[0]
+            # Fully vectorized sampling: sample up to num_samples_per_class per class
+            N = labels_flat.shape[0]
 
-        # Create random priorities for sampling
-        random_priorities = torch.rand(N, device=device)
+            # Create random priorities for sampling
+            random_priorities = torch.rand(N, device=device)
 
-        # Sort by (class, random_priority) to group by class with random order within
-        # Use composite key: class * 2 + random (since random in [0,1))
-        sort_key = labels_flat.float() * 2.0 + random_priorities
-        sorted_indices = torch.argsort(sort_key)
-        sorted_labels = labels_flat[sorted_indices]
+            # Sort by (class, random_priority) to group by class with random order within
+            # Use composite key: class * 2 + random (since random in [0,1))
+            sort_key = labels_flat.float() * 2.0 + random_priorities
+            sorted_indices = torch.argsort(sort_key)
+            sorted_labels = labels_flat[sorted_indices]
 
-        # Compute position within each class using cumsum trick
-        # label_changes[i] = 1 if sorted_labels[i] != sorted_labels[i-1], else 0
-        label_changes = torch.cat([
-            torch.ones(1, device=device, dtype=torch.long),
-            (sorted_labels[1:] != sorted_labels[:-1]).long()
-        ])
-        # cumsum gives group id, subtract to get position within group
-        group_ids = torch.cumsum(label_changes, dim=0) - 1
-        # Position within class: for each element, count how many before it have same label
-        # Use scatter to count positions
-        positions = torch.zeros(N, device=device, dtype=torch.long)
-        # For each group, positions should be 0, 1, 2, ...
-        # We can compute this by: position[i] = i - first_index_of_group[group_ids[i]]
-        unique_groups, inverse_indices = torch.unique(group_ids, return_inverse=True)
-        # Get first occurrence of each group
-        first_occurrence = torch.zeros(len(unique_groups), device=device, dtype=torch.long)
-        # scatter_reduce to get min index for each group
-        first_occurrence.scatter_reduce_(
-            0, inverse_indices,
-            torch.arange(N, device=device, dtype=torch.long),
-            reduce='amin', include_self=False
-        )
-        positions = torch.arange(N, device=device, dtype=torch.long) - first_occurrence[inverse_indices]
+            # Compute position within each class using cumsum trick
+            # label_changes[i] = 1 if sorted_labels[i] != sorted_labels[i-1], else 0
+            label_changes = torch.cat([
+                torch.ones(1, device=device, dtype=torch.long),
+                (sorted_labels[1:] != sorted_labels[:-1]).long()
+            ])
+            # cumsum gives group id, subtract to get position within group
+            group_ids = torch.cumsum(label_changes, dim=0) - 1
+            # Position within class: for each element, count how many before it have same label
+            # Use scatter to count positions
+            positions = torch.zeros(N, device=device, dtype=torch.long)
+            # For each group, positions should be 0, 1, 2, ...
+            # We can compute this by: position[i] = i - first_index_of_group[group_ids[i]]
+            unique_groups, inverse_indices = torch.unique(group_ids, return_inverse=True)
+            # Get first occurrence of each group
+            first_occurrence = torch.zeros(len(unique_groups), device=device, dtype=torch.long)
+            # scatter_reduce to get min index for each group
+            first_occurrence.scatter_reduce_(
+                0, inverse_indices,
+                torch.arange(N, device=device, dtype=torch.long),
+                reduce='amin', include_self=False
+            )
+            positions = torch.arange(N, device=device, dtype=torch.long) - first_occurrence[inverse_indices]
 
-        # Select samples where position < num_samples_per_class
-        sample_mask = positions < self.num_samples_per_class
-        sampled_indices = sorted_indices[sample_mask]  # [K]
-        sampled_classes = sorted_labels[sample_mask]   # [K]
-        K = sampled_indices.shape[0]
+            # Select samples where position < num_samples_per_class
+            sample_mask = positions < self.num_samples_per_class
+            sampled_indices = sorted_indices[sample_mask]  # [K]
+            sampled_classes = sorted_labels[sample_mask]   # [K]
+            K = sampled_indices.shape[0]
 
-        if K == 0:
-            return torch.tensor(0.0, device=device, requires_grad=True)
+            if K == 0:
+                return torch.tensor(0.0, device=device, requires_grad=True)
 
-        # Get anchor embeddings
-        anchors = voxel_flat[sampled_indices]  # (K, C)
+            # Get anchor embeddings
+            anchors = voxel_flat[sampled_indices]  # (K, C)
 
-        # Get positive embeddings (class embedding for each anchor's true class)
-        positives = label_emb[sampled_classes]  # (K, C)
+            # Get positive embeddings (class embedding for each anchor's true class)
+            positives = label_emb[sampled_classes]  # (K, C)
 
-        # Compute positive distances
-        d_pos = pointwise_dist(anchors, positives, self.curv)  # [K]
+            # Compute positive distances
+            d_pos = pointwise_dist(anchors, positives, self.curv)  # [K]
 
-        # Vectorized negative sampling and loss computation
-        # Compute all pairwise distances: anchors to all class embeddings
-        all_dists = pairwise_dist(anchors, label_emb, self.curv)  # [K, num_classes]
+            # Vectorized negative sampling and loss computation
+            # Compute all pairwise distances: anchors to all class embeddings
+            all_dists = pairwise_dist(anchors, label_emb, self.curv)  # [K, num_classes]
 
-        # Create mask for valid negatives (exclude true class for each anchor)
-        # neg_mask[i, j] = True if class j is a valid negative for anchor i
-        class_indices = torch.arange(num_classes, device=device)  # [num_classes]
-        neg_mask = class_indices.unsqueeze(0) != sampled_classes.unsqueeze(1)  # [K, num_classes]
+            # Create mask for valid negatives (exclude true class for each anchor)
+            # neg_mask[i, j] = True if class j is a valid negative for anchor i
+            class_indices = torch.arange(num_classes, device=device)  # [num_classes]
+            neg_mask = class_indices.unsqueeze(0) != sampled_classes.unsqueeze(1)  # [K, num_classes]
 
-        # Curriculum negative sampling
-        # Get top-k negative indices for each anchor
-        n_neg = min(self.num_negatives, num_classes - 1)
-        if n_neg <= 0:
-            return torch.tensor(0.0, device=device, requires_grad=True)
+            # Curriculum negative sampling
+            # Get top-k negative indices for each anchor
+            n_neg = min(self.num_negatives, num_classes - 1)
+            if n_neg <= 0:
+                return torch.tensor(0.0, device=device, requires_grad=True)
 
-        with torch.no_grad():
-            all_dists_f32 = all_dists.float()
-            epoch = self.current_epoch.item()
+            with torch.no_grad():
+                all_dists_f32 = all_dists.float()
+                epoch = self.current_epoch.item()
 
-            if epoch < self.warmup_epochs:
-                # Warmup: uniform random sampling
-                neg_weights = torch.where(
-                    neg_mask,
-                    torch.ones_like(all_dists_f32),
-                    torch.zeros_like(all_dists_f32)
-                )
-            else:
-                # Curriculum: distance-weighted sampling with temperature
-                # Lower temperature = prefer harder negatives (closer ones)
-                temperature = self.get_temperature()
-                neg_weights = torch.where(
-                    neg_mask,
-                    torch.exp(-all_dists_f32 / temperature),
-                    torch.zeros_like(all_dists_f32)
-                )
+                if epoch < self.warmup_epochs:
+                    # Warmup: uniform random sampling
+                    neg_weights = torch.where(
+                        neg_mask,
+                        torch.ones_like(all_dists_f32),
+                        torch.zeros_like(all_dists_f32)
+                    )
+                else:
+                    # Curriculum: distance-weighted sampling with temperature
+                    # Lower temperature = prefer harder negatives (closer ones)
+                    temperature = self.get_temperature()
+                    neg_weights = torch.where(
+                        neg_mask,
+                        torch.exp(-all_dists_f32 / temperature),
+                        torch.zeros_like(all_dists_f32)
+                    )
 
-            # Normalize weights to form probability distribution
-            neg_weights = neg_weights / neg_weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
-            neg_indices = torch.multinomial(neg_weights, n_neg, replacement=False)
+                # Stabilize probabilities to avoid multinomial failures on pathological rows.
+                neg_weights = _normalize_sampling_weights(neg_weights, neg_mask)
+                neg_indices = torch.multinomial(neg_weights, n_neg, replacement=False)
 
-        # Gather negative distances
-        d_neg = torch.gather(all_dists, 1, neg_indices)  # [K, n_neg]
+            # Gather negative distances
+            d_neg = torch.gather(all_dists, 1, neg_indices)  # [K, n_neg]
 
-        # Compute triplet loss: max(0, margin + d_pos - d_neg)
-        # d_pos: [K], d_neg: [K, n_neg]
-        triplet_loss = torch.clamp(self.margin + d_pos.unsqueeze(1) - d_neg, min=0)  # [K, n_neg]
+            # Compute triplet loss: max(0, margin + d_pos - d_neg)
+            # d_pos: [K], d_neg: [K, n_neg]
+            triplet_loss = torch.clamp(self.margin + d_pos.unsqueeze(1) - d_neg, min=0)  # [K, n_neg]
 
-        # Average over negatives, then over anchors
-        loss = triplet_loss.mean()
+            # Average over negatives, then over anchors
+            loss = triplet_loss.mean()
 
-        return loss
+            return loss
 
 
 class LorentzTreeRankingLoss(nn.Module):
@@ -328,123 +347,125 @@ class LorentzTreeRankingLoss(nn.Module):
         Returns:
             Scalar loss
         """
-        # Force float32 for numerical stability (AMP compatibility)
-        voxel_emb = voxel_emb.float()
-        label_emb = label_emb.float()
+        # Keep hyperbolic distance computation in FP32: AMP autocast can downcast
+        # matrix multiplications in pairwise_dist to FP16 and overflow to inf/nan.
+        with torch.autocast(device_type=voxel_emb.device.type, enabled=False):
+            voxel_emb = voxel_emb.float()
+            label_emb = label_emb.float()
 
-        device = voxel_emb.device
-        B, C, D, H, W = voxel_emb.shape
-        num_classes = label_emb.shape[0]
+            device = voxel_emb.device
+            B, C, D, H, W = voxel_emb.shape
+            num_classes = label_emb.shape[0]
 
-        # Reshape: (B, C, D, H, W) -> (N, C) where N = B*D*H*W
-        voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, C)  # (N, C)
-        labels_flat = labels.reshape(-1)  # (N)
+            # Reshape: (B, C, D, H, W) -> (N, C) where N = B*D*H*W
+            voxel_flat = voxel_emb.permute(0, 2, 3, 4, 1).reshape(-1, C)  # (N, C)
+            labels_flat = labels.reshape(-1)  # (N)
 
-        # Fully vectorized sampling: sample up to num_samples_per_class per class
-        N = labels_flat.shape[0]
+            # Fully vectorized sampling: sample up to num_samples_per_class per class
+            N = labels_flat.shape[0]
 
-        # Create random priorities for sampling
-        random_priorities = torch.rand(N, device=device)
+            # Create random priorities for sampling
+            random_priorities = torch.rand(N, device=device)
 
-        # Sort by (class, random_priority) to group by class with random order within
-        # Use composite key: class * 2 + random (since random in [0,1))
-        sort_key = labels_flat.float() * 2.0 + random_priorities
-        sorted_indices = torch.argsort(sort_key)
-        sorted_labels = labels_flat[sorted_indices]
+            # Sort by (class, random_priority) to group by class with random order within
+            # Use composite key: class * 2 + random (since random in [0,1))
+            sort_key = labels_flat.float() * 2.0 + random_priorities
+            sorted_indices = torch.argsort(sort_key)
+            sorted_labels = labels_flat[sorted_indices]
 
-        # Compute position within each class using cumsum trick
-        # label_changes[i] = 1 if sorted_labels[i] != sorted_labels[i-1], else 0
-        label_changes = torch.cat([
-            torch.ones(1, device=device, dtype=torch.long),
-            (sorted_labels[1:] != sorted_labels[:-1]).long()
-        ])
-        # cumsum gives group id, subtract to get position within group
-        group_ids = torch.cumsum(label_changes, dim=0) - 1
-        # Position within class: for each element, count how many before it have same label
-        # Use scatter to count positions
-        positions = torch.zeros(N, device=device, dtype=torch.long)
-        # For each group, positions should be 0, 1, 2, ...
-        # We can compute this by: position[i] = i - first_index_of_group[group_ids[i]]
-        unique_groups, inverse_indices = torch.unique(group_ids, return_inverse=True)
-        # Get first occurrence of each group
-        first_occurrence = torch.zeros(len(unique_groups), device=device, dtype=torch.long)
-        # scatter_reduce to get min index for each group
-        first_occurrence.scatter_reduce_(
-            0, inverse_indices,
-            torch.arange(N, device=device, dtype=torch.long),
-            reduce='amin', include_self=False
-        )
-        positions = torch.arange(N, device=device, dtype=torch.long) - first_occurrence[inverse_indices]
+            # Compute position within each class using cumsum trick
+            # label_changes[i] = 1 if sorted_labels[i] != sorted_labels[i-1], else 0
+            label_changes = torch.cat([
+                torch.ones(1, device=device, dtype=torch.long),
+                (sorted_labels[1:] != sorted_labels[:-1]).long()
+            ])
+            # cumsum gives group id, subtract to get position within group
+            group_ids = torch.cumsum(label_changes, dim=0) - 1
+            # Position within class: for each element, count how many before it have same label
+            # Use scatter to count positions
+            positions = torch.zeros(N, device=device, dtype=torch.long)
+            # For each group, positions should be 0, 1, 2, ...
+            # We can compute this by: position[i] = i - first_index_of_group[group_ids[i]]
+            unique_groups, inverse_indices = torch.unique(group_ids, return_inverse=True)
+            # Get first occurrence of each group
+            first_occurrence = torch.zeros(len(unique_groups), device=device, dtype=torch.long)
+            # scatter_reduce to get min index for each group
+            first_occurrence.scatter_reduce_(
+                0, inverse_indices,
+                torch.arange(N, device=device, dtype=torch.long),
+                reduce='amin', include_self=False
+            )
+            positions = torch.arange(N, device=device, dtype=torch.long) - first_occurrence[inverse_indices]
 
-        # Select samples where position < num_samples_per_class
-        sample_mask = positions < self.num_samples_per_class
-        sampled_indices = sorted_indices[sample_mask]  # [K]
-        sampled_classes = sorted_labels[sample_mask]   # [K]
-        K = sampled_indices.shape[0]
+            # Select samples where position < num_samples_per_class
+            sample_mask = positions < self.num_samples_per_class
+            sampled_indices = sorted_indices[sample_mask]  # [K]
+            sampled_classes = sorted_labels[sample_mask]   # [K]
+            K = sampled_indices.shape[0]
 
-        if K == 0:
-            return torch.tensor(0.0, device=device, requires_grad=True)
+            if K == 0:
+                return torch.tensor(0.0, device=device, requires_grad=True)
 
-        # Get anchor embeddings
-        anchors = voxel_flat[sampled_indices]  # (K, C)
+            # Get anchor embeddings
+            anchors = voxel_flat[sampled_indices]  # (K, C)
 
-        # Get positive embeddings (class embedding for each anchor's true class)
-        positives = label_emb[sampled_classes]  # (K, C)
+            # Get positive embeddings (class embedding for each anchor's true class)
+            positives = label_emb[sampled_classes]  # (K, C)
 
-        # Compute positive distances using hyperbolic distance
-        d_pos = pointwise_dist(anchors, positives, self.curv)  # [K]
+            # Compute positive distances using hyperbolic distance
+            d_pos = pointwise_dist(anchors, positives, self.curv)  # [K]
 
-        # Compute all pairwise hyperbolic distances for triplet loss (d_neg)
-        # This is needed for the loss computation, not for sampling
-        all_hyp_dists = pairwise_dist(anchors, label_emb, self.curv)  # [K, num_classes]
+            # Compute all pairwise hyperbolic distances for triplet loss (d_neg)
+            # This is needed for the loss computation, not for sampling
+            all_hyp_dists = pairwise_dist(anchors, label_emb, self.curv)  # [K, num_classes]
 
-        # Create mask for valid negatives (exclude true class for each anchor)
-        # neg_mask[i, j] = True if class j is a valid negative for anchor i
-        class_indices = torch.arange(num_classes, device=device)  # [num_classes]
-        neg_mask = class_indices.unsqueeze(0) != sampled_classes.unsqueeze(1)  # [K, num_classes]
+            # Create mask for valid negatives (exclude true class for each anchor)
+            # neg_mask[i, j] = True if class j is a valid negative for anchor i
+            class_indices = torch.arange(num_classes, device=device)  # [num_classes]
+            neg_mask = class_indices.unsqueeze(0) != sampled_classes.unsqueeze(1)  # [K, num_classes]
 
-        # Curriculum negative sampling using TREE DISTANCE (per-class, not per-anchor)
-        # Key difference from LorentzRankingLoss: use tree_dist_matrix[sampled_classes]
-        n_neg = min(self.num_negatives, num_classes - 1)
-        if n_neg <= 0:
-            return torch.tensor(0.0, device=device, requires_grad=True)
+            # Curriculum negative sampling using TREE DISTANCE (per-class, not per-anchor)
+            # Key difference from LorentzRankingLoss: use tree_dist_matrix[sampled_classes]
+            n_neg = min(self.num_negatives, num_classes - 1)
+            if n_neg <= 0:
+                return torch.tensor(0.0, device=device, requires_grad=True)
 
-        with torch.no_grad():
-            epoch = self.current_epoch.item()
+            with torch.no_grad():
+                epoch = self.current_epoch.item()
 
-            # Get tree distances for each anchor's class: [K, num_classes]
-            # tree_dist_matrix[sampled_classes] gives distances from each anchor's class to all classes
-            tree_dists = self.tree_dist_matrix[sampled_classes]  # [K, num_classes]
+                # Get tree distances for each anchor's class: [K, num_classes]
+                # tree_dist_matrix[sampled_classes] gives distances from each anchor's class to all classes
+                tree_dists = self.tree_dist_matrix[sampled_classes]  # [K, num_classes]
 
-            if epoch < self.warmup_epochs:
-                # Warmup: uniform random sampling
-                neg_weights = torch.where(
-                    neg_mask,
-                    torch.ones_like(tree_dists),
-                    torch.zeros_like(tree_dists)
-                )
-            else:
-                # Curriculum: tree-distance-weighted sampling with temperature
-                # Lower temperature = prefer harder negatives (closer in tree)
-                temperature = self.get_temperature()
-                neg_weights = torch.where(
-                    neg_mask,
-                    torch.exp(-tree_dists / temperature),
-                    torch.zeros_like(tree_dists)
-                )
+                if epoch < self.warmup_epochs:
+                    # Warmup: uniform random sampling
+                    neg_weights = torch.where(
+                        neg_mask,
+                        torch.ones_like(tree_dists),
+                        torch.zeros_like(tree_dists)
+                    )
+                else:
+                    # Curriculum: tree-distance-weighted sampling with temperature
+                    # Lower temperature = prefer harder negatives (closer in tree)
+                    temperature = self.get_temperature()
+                    neg_weights = torch.where(
+                        neg_mask,
+                        torch.exp(-tree_dists / temperature),
+                        torch.zeros_like(tree_dists)
+                    )
 
-            # Normalize weights to form probability distribution
-            neg_weights = neg_weights / neg_weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
-            neg_indices = torch.multinomial(neg_weights, n_neg, replacement=False)
+                # Stabilize probabilities to avoid multinomial failures on pathological rows.
+                neg_weights = _normalize_sampling_weights(neg_weights, neg_mask)
+                neg_indices = torch.multinomial(neg_weights, n_neg, replacement=False)
 
-        # Gather negative distances (using hyperbolic distance for loss computation)
-        d_neg = torch.gather(all_hyp_dists, 1, neg_indices)  # [K, n_neg]
+            # Gather negative distances (using hyperbolic distance for loss computation)
+            d_neg = torch.gather(all_hyp_dists, 1, neg_indices)  # [K, n_neg]
 
-        # Compute triplet loss: max(0, margin + d_pos - d_neg)
-        # d_pos: [K], d_neg: [K, n_neg]
-        triplet_loss = torch.clamp(self.margin + d_pos.unsqueeze(1) - d_neg, min=0)  # [K, n_neg]
+            # Compute triplet loss: max(0, margin + d_pos - d_neg)
+            # d_pos: [K], d_neg: [K, n_neg]
+            triplet_loss = torch.clamp(self.margin + d_pos.unsqueeze(1) - d_neg, min=0)  # [K, n_neg]
 
-        # Average over negatives, then over anchors
-        loss = triplet_loss.mean()
+            # Average over negatives, then over anchors
+            loss = triplet_loss.mean()
 
-        return loss
+            return loss

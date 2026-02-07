@@ -49,7 +49,7 @@ weight_decay: 0.00001
 grad_clip: 1.0
 
 # AMP
-use_amp: true
+use_amp: false
 
 # Loss
 ce_weight: 0.5
