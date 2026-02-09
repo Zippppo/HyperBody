@@ -16,6 +16,7 @@ from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR, SequentialLR, LinearLR
 from tqdm import tqdm
 
 from config import Config
@@ -454,9 +455,19 @@ def main():
         {'params': visual_params, 'lr': cfg.lr},
         {'params': text_params, 'lr': cfg.lr * cfg.hyp_text_lr_ratio}
     ], weight_decay=cfg.weight_decay)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="max", factor=cfg.lr_factor, patience=cfg.lr_patience
-    )
+    if cfg.lr_scheduler == "cosine":
+        cosine_T_max = cfg.epochs - cfg.lr_warmup_epochs
+        assert cosine_T_max > 0, f"epochs ({cfg.epochs}) must be > lr_warmup_epochs ({cfg.lr_warmup_epochs})"
+        cosine_sched = CosineAnnealingLR(optimizer, T_max=cosine_T_max, eta_min=cfg.lr_eta_min)
+        if cfg.lr_warmup_epochs > 0:
+            warmup_sched = LinearLR(optimizer, start_factor=1e-3, total_iters=cfg.lr_warmup_epochs)
+            scheduler = SequentialLR(optimizer, [warmup_sched, cosine_sched], milestones=[cfg.lr_warmup_epochs])
+        else:
+            scheduler = cosine_sched
+    else:
+        scheduler = ReduceLROnPlateau(
+            optimizer, mode="max", factor=cfg.lr_factor, patience=cfg.lr_patience
+        )
 
     # AMP GradScaler (only if use_amp is enabled)
     scaler = GradScaler() if cfg.use_amp else None
@@ -550,7 +561,10 @@ def main():
         )
 
         # Update scheduler
-        scheduler.step(mean_dice)
+        if cfg.lr_scheduler == "cosine":
+            scheduler.step()
+        else:
+            scheduler.step(mean_dice)
 
         # Log to TensorBoard (only main process)
         if writer:

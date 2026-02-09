@@ -17,6 +17,7 @@ import tempfile
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.optim.lr_scheduler import CosineAnnealingLR, SequentialLR, LinearLR
 
 sys.path.insert(0, '/home/comp/25481568/code/HyperBody')
 
@@ -343,6 +344,231 @@ def test_error_handling():
     print("\n  ✓ Error handling test passed")
 
 
+def test_cosine_annealing_checkpoint():
+    """Test CosineAnnealingLR state_dict save/load round-trip"""
+    print_section("Test 8: CosineAnnealingLR Checkpoint")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model = SimpleModel()
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        scheduler = CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-6)
+
+        # Simulate 15 epochs of training
+        for _ in range(15):
+            optimizer.step()
+            scheduler.step()
+
+        lr_before = optimizer.param_groups[0]['lr']
+        print(f"  LR after 15 steps: {lr_before:.8f}")
+
+        # Save checkpoint
+        state = {
+            'epoch': 14,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'best_dice': 0.6,
+        }
+        save_path = save_checkpoint(state, tmpdir, 'cosine.pth')
+
+        # Load into fresh model
+        model2 = SimpleModel()
+        optimizer2 = optim.Adam(model2.parameters(), lr=1e-3)
+        scheduler2 = CosineAnnealingLR(optimizer2, T_max=50, eta_min=1e-6)
+
+        start_epoch, best_dice = load_checkpoint(
+            save_path, model2, optimizer2, scheduler2
+        )
+
+        lr_after = optimizer2.param_groups[0]['lr']
+        print(f"  LR after load:     {lr_after:.8f}")
+        print(f"  start_epoch: {start_epoch} (expected 15)")
+
+        assert start_epoch == 15
+        assert abs(lr_before - lr_after) < 1e-10, f"LR mismatch: {lr_before} vs {lr_after}"
+
+        # Step both schedulers one more time and verify they stay in sync
+        scheduler.step()
+        scheduler2.step()
+        lr_orig_next = optimizer.param_groups[0]['lr']
+        lr_loaded_next = optimizer2.param_groups[0]['lr']
+        print(f"  LR after one more step (original):  {lr_orig_next:.8f}")
+        print(f"  LR after one more step (loaded):    {lr_loaded_next:.8f}")
+        assert abs(lr_orig_next - lr_loaded_next) < 1e-10
+
+        print("\n  ✓ CosineAnnealingLR checkpoint test passed")
+
+
+def test_sequential_lr_checkpoint():
+    """Test SequentialLR(LinearLR + CosineAnnealingLR) save/load round-trip"""
+    print_section("Test 9: SequentialLR Checkpoint (warmup + cosine)")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        total_epochs = 50
+        warmup_epochs = 5
+
+        model = SimpleModel()
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+        cosine_sched = CosineAnnealingLR(
+            optimizer, T_max=total_epochs - warmup_epochs, eta_min=1e-6
+        )
+        warmup_sched = LinearLR(
+            optimizer, start_factor=1e-3, total_iters=warmup_epochs
+        )
+        scheduler = SequentialLR(
+            optimizer, [warmup_sched, cosine_sched], milestones=[warmup_epochs]
+        )
+
+        # Step through warmup phase and into cosine phase (8 epochs)
+        lrs = []
+        for i in range(8):
+            lr = optimizer.param_groups[0]['lr']
+            lrs.append(lr)
+            optimizer.step()
+            scheduler.step()
+
+        lr_before = optimizer.param_groups[0]['lr']
+        print(f"  LR trajectory (8 steps): {[f'{x:.6f}' for x in lrs]}")
+        print(f"  LR at save point: {lr_before:.8f}")
+
+        # Verify warmup happened (LR should increase during first 5 epochs)
+        assert lrs[0] < lrs[3], f"Warmup not working: lr[0]={lrs[0]} >= lr[3]={lrs[3]}"
+        # Verify cosine started (LR should decrease after warmup)
+        assert lrs[6] < lrs[5] or lrs[7] < lrs[5], "Cosine decay not started after warmup"
+
+        # Save checkpoint
+        state = {
+            'epoch': 7,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'best_dice': 0.55,
+        }
+        save_path = save_checkpoint(state, tmpdir, 'sequential.pth')
+
+        # Load into fresh model with identical scheduler setup
+        model2 = SimpleModel()
+        optimizer2 = optim.Adam(model2.parameters(), lr=1e-3)
+
+        cosine_sched2 = CosineAnnealingLR(
+            optimizer2, T_max=total_epochs - warmup_epochs, eta_min=1e-6
+        )
+        warmup_sched2 = LinearLR(
+            optimizer2, start_factor=1e-3, total_iters=warmup_epochs
+        )
+        scheduler2 = SequentialLR(
+            optimizer2, [warmup_sched2, cosine_sched2], milestones=[warmup_epochs]
+        )
+
+        start_epoch, best_dice = load_checkpoint(
+            save_path, model2, optimizer2, scheduler2
+        )
+
+        lr_after = optimizer2.param_groups[0]['lr']
+        print(f"  LR after load:     {lr_after:.8f}")
+
+        assert start_epoch == 8
+        assert abs(lr_before - lr_after) < 1e-10, f"LR mismatch: {lr_before} vs {lr_after}"
+
+        # Step both and verify sync
+        scheduler.step()
+        scheduler2.step()
+        lr_orig_next = optimizer.param_groups[0]['lr']
+        lr_loaded_next = optimizer2.param_groups[0]['lr']
+        print(f"  LR next step (original): {lr_orig_next:.8f}")
+        print(f"  LR next step (loaded):   {lr_loaded_next:.8f}")
+        assert abs(lr_orig_next - lr_loaded_next) < 1e-10
+
+        print("\n  ✓ SequentialLR checkpoint test passed")
+
+
+def test_cosine_multi_param_group():
+    """Test CosineAnnealingLR with 2 param groups (visual + text, matching train.py)"""
+    print_section("Test 10: Cosine Multi Param Group Checkpoint")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        total_epochs = 50
+        warmup_epochs = 5
+
+        model = SimpleModel()
+        # 2 param groups: visual (lr=1e-3) and text (lr=1e-5)
+        optimizer = optim.Adam([
+            {'params': [model.conv.weight, model.conv.bias], 'lr': 1e-3},
+            {'params': [model.fc.weight, model.fc.bias], 'lr': 1e-5},
+        ], weight_decay=1e-5)
+
+        cosine_sched = CosineAnnealingLR(
+            optimizer, T_max=total_epochs - warmup_epochs, eta_min=1e-6
+        )
+        warmup_sched = LinearLR(
+            optimizer, start_factor=1e-3, total_iters=warmup_epochs
+        )
+        scheduler = SequentialLR(
+            optimizer, [warmup_sched, cosine_sched], milestones=[warmup_epochs]
+        )
+
+        # Step through 12 epochs
+        for _ in range(12):
+            optimizer.step()
+            scheduler.step()
+
+        lr_visual_before = optimizer.param_groups[0]['lr']
+        lr_text_before = optimizer.param_groups[1]['lr']
+        print(f"  Visual LR at save: {lr_visual_before:.8f}")
+        print(f"  Text LR at save:   {lr_text_before:.8f}")
+
+        # Save
+        state = {
+            'epoch': 11,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'best_dice': 0.5,
+        }
+        save_path = save_checkpoint(state, tmpdir, 'multi_group.pth')
+
+        # Load into fresh setup
+        model2 = SimpleModel()
+        optimizer2 = optim.Adam([
+            {'params': [model2.conv.weight, model2.conv.bias], 'lr': 1e-3},
+            {'params': [model2.fc.weight, model2.fc.bias], 'lr': 1e-5},
+        ], weight_decay=1e-5)
+
+        cosine_sched2 = CosineAnnealingLR(
+            optimizer2, T_max=total_epochs - warmup_epochs, eta_min=1e-6
+        )
+        warmup_sched2 = LinearLR(
+            optimizer2, start_factor=1e-3, total_iters=warmup_epochs
+        )
+        scheduler2 = SequentialLR(
+            optimizer2, [warmup_sched2, cosine_sched2], milestones=[warmup_epochs]
+        )
+
+        start_epoch, best_dice = load_checkpoint(
+            save_path, model2, optimizer2, scheduler2
+        )
+
+        lr_visual_after = optimizer2.param_groups[0]['lr']
+        lr_text_after = optimizer2.param_groups[1]['lr']
+        print(f"  Visual LR after load: {lr_visual_after:.8f}")
+        print(f"  Text LR after load:   {lr_text_after:.8f}")
+
+        assert start_epoch == 12
+        assert abs(lr_visual_before - lr_visual_after) < 1e-10, \
+            f"Visual LR mismatch: {lr_visual_before} vs {lr_visual_after}"
+        assert abs(lr_text_before - lr_text_after) < 1e-10, \
+            f"Text LR mismatch: {lr_text_before} vs {lr_text_after}"
+
+        # Verify both groups stay in sync after another step
+        scheduler.step()
+        scheduler2.step()
+        assert abs(optimizer.param_groups[0]['lr'] - optimizer2.param_groups[0]['lr']) < 1e-10
+        assert abs(optimizer.param_groups[1]['lr'] - optimizer2.param_groups[1]['lr']) < 1e-10
+
+        print("\n  ✓ Cosine multi param group checkpoint test passed")
+
+
 def main():
     print("\n" + "="*60)
     print("  Checkpoint 详细测试")
@@ -355,9 +581,12 @@ def main():
     test_checkpoint_info()
     test_with_real_model()
     test_error_handling()
+    test_cosine_annealing_checkpoint()
+    test_sequential_lr_checkpoint()
+    test_cosine_multi_param_group()
 
     print("\n" + "="*60)
-    print("  所有测试通过!")
+    print("  All 10 tests passed!")
     print("="*60 + "\n")
 
 

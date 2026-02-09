@@ -3,7 +3,7 @@ Unified evaluation script for all model predictions.
 
 Usage:
     python eval/eval_all.py
-    python eval/eval_all.py --pred_dir eval/pred --gt_dir Dataset/voxel_data
+    python eval/eval_all.py --pred_dir eval/pred/LR-GD-M04-LRP3 --gt_dir Dataset/voxel_data
 """
 import argparse
 import json
@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--pred_dir", type=str, default="eval/pred", help="Predictions root directory")
     parser.add_argument("--gt_dir", type=str, default="Dataset/voxel_data", help="Ground truth data directory")
     parser.add_argument("--num_classes", type=int, default=70, help="Number of classes")
+    parser.add_argument("--model", type=str, default=None, help="Evaluate only this model (subdirectory name)")
     parser.add_argument("--output", type=str, default="eval/results/metrics.json", help="Output JSON path")
     return parser.parse_args()
 
@@ -117,10 +118,17 @@ def main():
         print(f"Prediction directory not found: {args.pred_dir}")
         return
 
-    model_dirs = sorted([
-        d for d in os.listdir(args.pred_dir)
-        if os.path.isdir(os.path.join(args.pred_dir, d))
-    ])
+    if args.model:
+        model_path = os.path.join(args.pred_dir, args.model)
+        if not os.path.isdir(model_path):
+            print(f"Model directory not found: {model_path}")
+            return
+        model_dirs = [args.model]
+    else:
+        model_dirs = sorted([
+            d for d in os.listdir(args.pred_dir)
+            if os.path.isdir(os.path.join(args.pred_dir, d))
+        ])
 
     if len(model_dirs) == 0:
         print(f"No model directories found in {args.pred_dir}")

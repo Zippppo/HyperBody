@@ -67,8 +67,11 @@ class Config:
     hyp_weight: float = 0.05      # Loss weight
 
     # LR scheduler
-    lr_patience: int = 10
-    lr_factor: float = 0.5
+    lr_scheduler: str = "plateau"       # "plateau" or "cosine"
+    lr_patience: int = 10               # plateau only
+    lr_factor: float = 0.5              # plateau only
+    lr_warmup_epochs: int = 0           # cosine only: linear warmup epochs
+    lr_eta_min: float = 1e-6            # cosine only: minimum LR
 
     # Checkpoint
     checkpoint_dir: str = "checkpoints/test_lorentz"
