@@ -460,7 +460,7 @@ def main():
         assert cosine_T_max > 0, f"epochs ({cfg.epochs}) must be > lr_warmup_epochs ({cfg.lr_warmup_epochs})"
         cosine_sched = CosineAnnealingLR(optimizer, T_max=cosine_T_max, eta_min=cfg.lr_eta_min)
         if cfg.lr_warmup_epochs > 0:
-            warmup_sched = LinearLR(optimizer, start_factor=1e-3, total_iters=cfg.lr_warmup_epochs)
+            warmup_sched = LinearLR(optimizer, start_factor=1.0, total_iters=cfg.lr_warmup_epochs)
             scheduler = SequentialLR(optimizer, [warmup_sched, cosine_sched], milestones=[cfg.lr_warmup_epochs])
         else:
             scheduler = cosine_sched
