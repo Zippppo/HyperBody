@@ -27,33 +27,33 @@ class Config:
     # Hyperbolic
     hyp_embed_dim: int = 32
     hyp_curv: float = 1.0
-    hyp_margin: float = 0.1       # Triplet margin
+    hyp_margin: float = 0.4       # Triplet margin
     hyp_samples_per_class: int = 64
     hyp_num_negatives: int = 8    # Negative classes per anchor
     # Curriculum Negative Mining
     hyp_t_start: float = 2.0      # Initial temperature (high = random)
     hyp_t_end: float = 0.1        # Final temperature (low = hard negatives)
-    hyp_warmup_epochs: int = 5    # Pure random sampling for first N epochs
+    hyp_warmup_epochs: int = 6    # Pure random sampling for first N epochs
     hyp_min_radius: float = 0.1   # Shallow organ init norm
     hyp_max_radius: float = 2.0   # Deep organ init norm
     hyp_direction_mode: str = "random"  # "random" or "semantic"
     hyp_text_embedding_path: str = "Dataset/text_embeddings/sat_label_embeddings.pt"
-    hyp_freeze_epochs: int = 0  # Freeze label embeddings for first N epochs (0 = no freeze)
+    hyp_freeze_epochs: int = 5  # Freeze label embeddings for first N epochs (0 = no freeze)
     hyp_text_lr_ratio: float = 0.01  # Text embedding LR = base_lr * ratio
     hyp_text_grad_clip: float = 0.1  # Gradient clip for text embeddings (first unfreeze epoch)
-    hyp_distance_mode: str = "hyperbolic"  # Distance mode for negative sampling: "hyperbolic", "tree", or "graph"
+    hyp_distance_mode: str = "graph"  # Distance mode for negative sampling: "hyperbolic", "tree", or "graph"
 
     # Spatial adjacency (for hyp_distance_mode="graph")
     spatial_dilation_radius: int = 3  # Cube dilation radius in voxels
     spatial_lambda: float = 1.0  # Scale factor for spatial edge distance
     spatial_epsilon: float = 0.01  # Prevents division by zero in contact->distance
     spatial_contact_matrix: str = ""  # Path to precomputed contact_matrix.pt (empty = compute)
-    graph_distance_matrix: str = ""  # Path to precomputed graph_distance_matrix.pt
+    graph_distance_matrix: str = "Dataset/graph_distance_matrix.pt"  # Path to precomputed graph_distance_matrix.pt
 
     # Training
-    batch_size: int = 1  # per GPU
+    batch_size: int = 2  # per GPU
     num_workers: int = 0
-    epochs: int = 120
+    epochs: int = 50
     lr: float = 1e-3
     weight_decay: float = 1e-5
     grad_clip: float = 1.0
@@ -68,16 +68,16 @@ class Config:
     hyp_weight: float = 0.05      # Loss weight
 
     # LR scheduler
-    lr_scheduler: str = "plateau"       # "plateau" or "cosine"
+    lr_scheduler: str = "cosine"       # "plateau" or "cosine"
     lr_patience: int = 10               # plateau only
     lr_factor: float = 0.5              # plateau only
-    lr_warmup_epochs: int = 0           # cosine only: linear warmup epochs
+    lr_warmup_epochs: int = 4           # cosine only: linear warmup epochs
     lr_eta_min: float = 1e-6            # cosine only: minimum LR
 
     # Checkpoint
-    checkpoint_dir: str = "checkpoints/test_lorentz"
+    checkpoint_dir: str = ""
     save_every: int = 10
-    log_dir: str = "runs/test_lorentz"
+    log_dir: str = ""
 
     # GPU
     gpu_ids: List[int] = field(default_factory=lambda: [0, 1])
