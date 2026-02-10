@@ -389,7 +389,10 @@ def main():
         ce_weight=cfg.ce_weight,
         dice_weight=cfg.dice_weight,
         class_weights=class_weights,
+        dice_ignore_index=cfg.dice_ignore_index,
     )
+    if cfg.dice_ignore_index is not None:
+        logger.info(f"Dice loss ignoring class {cfg.dice_ignore_index}")
 
     # Hyperbolic ranking loss (with Curriculum Negative Mining)
     # Choose loss class based on hyp_distance_mode config

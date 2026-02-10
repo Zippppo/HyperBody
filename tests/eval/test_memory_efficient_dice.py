@@ -10,7 +10,7 @@ Checkpoints:
 import torch
 import sys
 
-sys.path.insert(0, "/home/comp/25481568/code/HyperBody")
+sys.path.insert(0, "/home/comp/csrkzhu/code/RUN")
 
 from models.losses import DiceLoss, MemoryEfficientDiceLoss
 
@@ -242,6 +242,127 @@ def test_boundary_single_class():
 
 
 # ---------------------------------------------------------------------------
+# Checkpoint 4: ignore_index Tests
+# ---------------------------------------------------------------------------
+def test_forward_consistency_with_ignore_index():
+    """DiceLoss and MemoryEfficientDiceLoss agree when ignore_index=0."""
+    print_section("Checkpoint 4a: Forward Consistency with ignore_index=0")
+
+    B, C, D, H, W = 2, 70, 16, 16, 16
+    torch.manual_seed(42)
+    logits = torch.randn(B, C, D, H, W)
+    targets = torch.randint(0, C, (B, D, H, W))
+
+    ref_loss = DiceLoss(smooth=1.0, ignore_index=0)
+    new_loss = MemoryEfficientDiceLoss(smooth=1.0, ignore_index=0)
+
+    loss_ref = ref_loss(logits, targets)
+    loss_new = new_loss(logits, targets)
+
+    diff = (loss_ref - loss_new).abs().item()
+    print(f"  Reference loss: {loss_ref.item():.8f}")
+    print(f"  New loss:       {loss_new.item():.8f}")
+    print(f"  Abs diff:       {diff:.2e}")
+
+    assert diff < 1e-6, f"Forward diff with ignore_index {diff} >= 1e-6"
+    print("  PASSED")
+
+
+def test_ignore_index_changes_loss():
+    """ignore_index=0 produces a different loss value than no ignore."""
+    print_section("Checkpoint 4b: ignore_index changes loss value")
+
+    B, C, D, H, W = 2, 70, 16, 16, 16
+    torch.manual_seed(42)
+    logits = torch.randn(B, C, D, H, W)
+    targets = torch.randint(0, C, (B, D, H, W))
+
+    loss_no_ignore = MemoryEfficientDiceLoss(smooth=1.0)(logits, targets)
+    loss_with_ignore = MemoryEfficientDiceLoss(smooth=1.0, ignore_index=0)(logits, targets)
+
+    diff = (loss_no_ignore - loss_with_ignore).abs().item()
+    print(f"  Loss (no ignore):   {loss_no_ignore.item():.8f}")
+    print(f"  Loss (ignore=0):    {loss_with_ignore.item():.8f}")
+    print(f"  Abs diff:           {diff:.2e}")
+
+    assert diff > 1e-6, f"ignore_index should change loss, but diff={diff}"
+    print("  PASSED")
+
+
+def test_ignore_index_none_backward_compatible():
+    """ignore_index=None gives exactly the same result as old behavior (diff=0)."""
+    print_section("Checkpoint 4c: ignore_index=None backward compatible")
+
+    B, C, D, H, W = 2, 70, 16, 16, 16
+    torch.manual_seed(42)
+    logits = torch.randn(B, C, D, H, W)
+    targets = torch.randint(0, C, (B, D, H, W))
+
+    loss_default = MemoryEfficientDiceLoss(smooth=1.0)(logits, targets)
+    loss_none = MemoryEfficientDiceLoss(smooth=1.0, ignore_index=None)(logits, targets)
+
+    diff = (loss_default - loss_none).abs().item()
+    print(f"  Loss (default):       {loss_default.item():.8f}")
+    print(f"  Loss (ignore=None):   {loss_none.item():.8f}")
+    print(f"  Abs diff:             {diff:.2e}")
+
+    assert diff == 0.0, f"ignore_index=None should be identical, but diff={diff}"
+    print("  PASSED")
+
+
+def test_backward_consistency_with_ignore_index():
+    """Gradient consistency between DiceLoss and MemoryEfficientDiceLoss with ignore_index=0."""
+    print_section("Checkpoint 4d: Backward Consistency with ignore_index=0")
+
+    B, C, D, H, W = 2, 70, 16, 16, 16
+    torch.manual_seed(42)
+    targets = torch.randint(0, C, (B, D, H, W))
+
+    # --- Reference ---
+    logits_ref = torch.randn(B, C, D, H, W, requires_grad=True)
+    loss_ref = DiceLoss(smooth=1.0, ignore_index=0)(logits_ref, targets)
+    loss_ref.backward()
+    grad_ref = logits_ref.grad.clone()
+
+    # --- New ---
+    logits_new = logits_ref.detach().clone().requires_grad_(True)
+    loss_new = MemoryEfficientDiceLoss(smooth=1.0, ignore_index=0)(logits_new, targets)
+    loss_new.backward()
+    grad_new = logits_new.grad.clone()
+
+    max_diff = (grad_ref - grad_new).abs().max().item()
+    print(f"  Grad max diff: {max_diff:.2e}")
+    assert max_diff < 1e-5, f"Gradient max diff with ignore_index {max_diff} >= 1e-5"
+    print("  PASSED")
+
+
+def test_ignore_only_present_class():
+    """When all targets are the ignored class, loss should not be NaN/Inf."""
+    print_section("Checkpoint 4e: ignore only present class (no NaN/Inf)")
+
+    B, C, D, H, W = 2, 10, 8, 8, 8
+    torch.manual_seed(42)
+    logits = torch.randn(B, C, D, H, W)
+    # All targets are class 0, which is also the ignored class
+    targets = torch.zeros(B, D, H, W, dtype=torch.long)
+
+    loss_fn = MemoryEfficientDiceLoss(smooth=1.0, ignore_index=0)
+    loss = loss_fn(logits, targets)
+
+    print(f"  Loss value: {loss.item():.8f}")
+    assert not torch.isnan(loss), "Loss is NaN when ignoring only present class"
+    assert not torch.isinf(loss), "Loss is Inf when ignoring only present class"
+
+    # Also check DiceLoss
+    loss_ref_fn = DiceLoss(smooth=1.0, ignore_index=0)
+    loss_ref = loss_ref_fn(logits, targets)
+    print(f"  Ref loss:   {loss_ref.item():.8f}")
+    assert not torch.isnan(loss_ref), "Ref loss is NaN"
+    assert not torch.isinf(loss_ref), "Ref loss is Inf"
+    print("  PASSED")
+
+
+# ---------------------------------------------------------------------------
 # Run all tests
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
@@ -254,6 +375,12 @@ if __name__ == "__main__":
         test_boundary_all_last_class,
         test_boundary_backward_all_zeros,
         test_boundary_single_class,
+        # ignore_index tests
+        test_forward_consistency_with_ignore_index,
+        test_ignore_index_changes_loss,
+        test_ignore_index_none_backward_compatible,
+        test_backward_consistency_with_ignore_index,
+        test_ignore_only_present_class,
     ]
 
     passed = 0

@@ -6,13 +6,15 @@ import torch.nn.functional as F
 class DiceLoss(nn.Module):
     """Multi-class Dice loss for 3D segmentation"""
 
-    def __init__(self, smooth: float = 1.0):
+    def __init__(self, smooth: float = 1.0, ignore_index: int = None):
         """
         Args:
             smooth: Smoothing factor to avoid division by zero
+            ignore_index: Class index to exclude from Dice averaging (None = use all)
         """
         super().__init__()
         self.smooth = smooth
+        self.ignore_index = ignore_index
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
@@ -45,8 +47,13 @@ class DiceLoss(nn.Module):
 
         dice_per_class = (2.0 * intersection + self.smooth) / (union + self.smooth)  # (B, C)
 
-        # Average over classes and batch
-        mean_dice = dice_per_class.mean()
+        # Average over classes and batch, optionally excluding ignore_index
+        if self.ignore_index is not None:
+            mask = torch.ones(num_classes, dtype=torch.bool, device=dice_per_class.device)
+            mask[self.ignore_index] = False
+            mean_dice = dice_per_class[:, mask].mean()
+        else:
+            mean_dice = dice_per_class.mean()
 
         return 1.0 - mean_dice
 
@@ -59,13 +66,15 @@ class MemoryEfficientDiceLoss(nn.Module):
     Mathematically equivalent to DiceLoss (one-hot version).
     """
 
-    def __init__(self, smooth: float = 1.0):
+    def __init__(self, smooth: float = 1.0, ignore_index: int = None):
         """
         Args:
             smooth: Smoothing factor to avoid division by zero
+            ignore_index: Class index to exclude from Dice averaging (None = use all)
         """
         super().__init__()
         self.smooth = smooth
+        self.ignore_index = ignore_index
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
@@ -117,8 +126,13 @@ class MemoryEfficientDiceLoss(nn.Module):
         # Dice per class
         dice_per_class = (2.0 * intersection + self.smooth) / (union + self.smooth)  # (B, C)
 
-        # Average over classes and batch
-        mean_dice = dice_per_class.mean()
+        # Average over classes and batch, optionally excluding ignore_index
+        if self.ignore_index is not None:
+            mask = torch.ones(num_classes, dtype=torch.bool, device=dice_per_class.device)
+            mask[self.ignore_index] = False
+            mean_dice = dice_per_class[:, mask].mean()
+        else:
+            mean_dice = dice_per_class.mean()
 
         return 1.0 - mean_dice
 
@@ -133,6 +147,7 @@ class CombinedLoss(nn.Module):
         dice_weight: float = 0.5,
         class_weights: torch.Tensor = None,
         smooth: float = 1.0,
+        dice_ignore_index: int = None,
     ):
         """
         Args:
@@ -141,13 +156,14 @@ class CombinedLoss(nn.Module):
             dice_weight: Weight for Dice loss
             class_weights: (C,) tensor of per-class weights for CE loss
             smooth: Smoothing factor for Dice loss
+            dice_ignore_index: Class index to exclude from Dice averaging (None = use all)
         """
         super().__init__()
         self.ce_weight = ce_weight
         self.dice_weight = dice_weight
 
         self.ce_loss = nn.CrossEntropyLoss(weight=class_weights)
-        self.dice_loss = MemoryEfficientDiceLoss(smooth=smooth)
+        self.dice_loss = MemoryEfficientDiceLoss(smooth=smooth, ignore_index=dice_ignore_index)
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """

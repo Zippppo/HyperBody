@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, fields
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import yaml
 
 
@@ -64,6 +64,7 @@ class Config:
     # Loss
     ce_weight: float = 0.5
     dice_weight: float = 0.5
+    dice_ignore_index: Optional[int] = None
     hyp_weight: float = 0.05      # Loss weight
 
     # LR scheduler
@@ -100,11 +101,20 @@ class Config:
         # Get valid field names
         valid_fields = {f.name for f in fields(cls)}
 
+        # Build a map of field name -> expected type for type coercion
+        field_types = {f.name: f.type for f in fields(cls)}
+
         for key, value in yaml_cfg.items():
             if key in valid_fields:
                 # Handle tuple conversion for volume_size
                 if key == "volume_size" and isinstance(value, list):
                     value = tuple(value)
+                # Coerce str to float/int when dataclass expects numeric type
+                # (e.g. YAML parses "1e-6" as str, but field expects float)
+                elif isinstance(value, str) and field_types.get(key) in ("float", float):
+                    value = float(value)
+                elif isinstance(value, str) and field_types.get(key) in ("int", int):
+                    value = int(value)
                 setattr(cfg, key, value)
             else:
                 print(f"Warning: Unknown config key '{key}' in YAML, ignored.")
