@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from scipy.stats import spearmanr
+from scipy.stats import rankdata, spearmanr
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -30,17 +30,14 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from config import Config
 from data.organ_hierarchy import load_organ_hierarchy, load_class_to_system
 from models.body_net import BodyNet
-from models.hyperbolic.lorentz_ops import (
-    lorentz_to_poincare,
-    pairwise_dist,
-)
+from models.hyperbolic.lorentz_ops import pairwise_dist
 from models.hyperbolic.embedding_tracker import SYSTEM_COLORS
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Learned Embedding Analysis (Section 5.6)")
     parser.add_argument("--config", type=str, default="configs/LR-GD-M05-cosineLR.yaml")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/LR-CD-M05-consineLR/best.pth")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/LR-CD-M05-cosineLR/best.pth")
     parser.add_argument("--output-dir", type=str, default="docs/visualizations/embedding_analysis")
     parser.add_argument("--top-k", type=int, default=20, help="Number of top pairs to report")
     parser.add_argument("--device", type=str, default="cpu")
@@ -106,11 +103,9 @@ def compute_analysis(D_graph, D_learned, class_names, class_to_system, top_k=20)
     # 1. Spearman rank correlation
     rho, pval = spearmanr(d_graph_flat, d_learned_flat)
 
-    # 2. Rank-based residual
-    rank_graph = np.zeros_like(d_graph_flat)
-    rank_learned = np.zeros_like(d_learned_flat)
-    rank_graph[d_graph_flat.argsort()] = np.arange(len(d_graph_flat))
-    rank_learned[d_learned_flat.argsort()] = np.arange(len(d_learned_flat))
+    # 2. Rank-based residual (use rankdata for proper tie handling)
+    rank_graph = rankdata(d_graph_flat, method='average') - 1
+    rank_learned = rankdata(d_learned_flat, method='average') - 1
     residual_flat = rank_learned - rank_graph
 
     # Reconstruct residual matrix
@@ -246,16 +241,28 @@ def make_residual_heatmap(residual_matrix, class_names, output_path):
 
 
 def make_poincare_projection(label_emb_lorentz, class_names, class_to_system, curv, output_path):
-    """Poincare ball projection with organ system colors."""
+    """Poincare ball projection with organ system colors.
+
+    Uses MDS on geodesic distances instead of PCA, since PCA (linear, Euclidean)
+    distorts the hyperbolic distance structure. MDS preserves pairwise geodesic
+    distances much better when projecting to 2D.
+    """
     import plotly.graph_objects as go
-    from sklearn.decomposition import PCA
+    from sklearn.manifold import MDS
 
-    poincare = lorentz_to_poincare(label_emb_lorentz, curv).cpu().numpy()
+    # Compute geodesic distance matrix for MDS
+    D_geo = pairwise_dist(label_emb_lorentz, label_emb_lorentz, curv=curv).cpu().numpy()
+    np.fill_diagonal(D_geo, 0.0)
 
-    # PCA to 2D
-    pca = PCA(n_components=2)
-    poincare_2d = pca.fit_transform(poincare)
-    explained = pca.explained_variance_ratio_
+    # MDS on geodesic distances -> 2D
+    mds = MDS(n_components=2, dissimilarity='precomputed',
+              random_state=42, normalized_stress='auto', n_init=4)
+    proj_2d = mds.fit_transform(D_geo)
+
+    # Normalize to fit inside unit circle for Poincare ball visualization
+    max_norm = np.linalg.norm(proj_2d, axis=1).max()
+    if max_norm > 0:
+        proj_2d = proj_2d / max_norm * 0.95  # scale to 95% of unit ball
 
     fig = go.Figure()
 
@@ -276,8 +283,8 @@ def make_poincare_projection(label_emb_lorentz, class_names, class_to_system, cu
             continue
         color = SYSTEM_COLORS.get(system, "#95A5A6")
         fig.add_trace(go.Scatter(
-            x=poincare_2d[idxs, 0],
-            y=poincare_2d[idxs, 1],
+            x=proj_2d[idxs, 0],
+            y=proj_2d[idxs, 1],
             mode="markers+text",
             marker=dict(size=10, color=color, line=dict(width=1, color="white")),
             text=[class_names[i] for i in idxs],
@@ -290,8 +297,8 @@ def make_poincare_projection(label_emb_lorentz, class_names, class_to_system, cu
 
     fig.update_layout(
         title=dict(
-            text=f"Poincare Ball Projection (PCA 2D, explained var: "
-                 f"{explained[0]:.1%} + {explained[1]:.1%})",
+            text=f"Poincare Ball Projection (MDS on geodesic distances, "
+                 f"stress={mds.stress_:.4f})",
             x=0.5,
         ),
         xaxis=dict(range=[-1.3, 1.3], scaleanchor="y", scaleratio=1),
@@ -417,7 +424,7 @@ def main():
 
     # Compute learned pairwise distance
     with torch.no_grad():
-        D_learned = pairwise_dist(label_emb_lorentz, label_emb_lorentz)
+        D_learned = pairwise_dist(label_emb_lorentz, label_emb_lorentz, curv=cfg.hyp_curv)
         # Zero out diagonal (numerical artifact)
         D_learned.fill_diagonal_(0.0)
 
