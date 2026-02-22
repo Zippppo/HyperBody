@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import os
 import logging
 import random
@@ -408,8 +409,9 @@ def main():
             t_start=cfg.hyp_t_start,
             t_end=cfg.hyp_t_end,
             warmup_epochs=cfg.hyp_warmup_epochs,
+            curriculum_epochs=cfg.hyp_curriculum_epochs,
         )
-        logger.info(f"Using LorentzTreeRankingLoss (tree distance mode)")
+        logger.info("Using LorentzTreeRankingLoss (tree distance mode)")
     elif cfg.hyp_distance_mode == "graph":
         # Graph-based negative sampling: load precomputed graph distance matrix.
         graph_dist_matrix = load_precomputed_graph_distance_matrix(
@@ -431,6 +433,7 @@ def main():
             t_start=cfg.hyp_t_start,
             t_end=cfg.hyp_t_end,
             warmup_epochs=cfg.hyp_warmup_epochs,
+            curriculum_epochs=cfg.hyp_curriculum_epochs,
         )
         logger.info("Using LorentzTreeRankingLoss (graph distance mode)")
     else:
@@ -443,6 +446,7 @@ def main():
             t_start=cfg.hyp_t_start,
             t_end=cfg.hyp_t_end,
             warmup_epochs=cfg.hyp_warmup_epochs,
+            curriculum_epochs=cfg.hyp_curriculum_epochs,
         )
         logger.info(f"Using LorentzRankingLoss (hyperbolic distance mode)")
 
@@ -467,6 +471,37 @@ def main():
             scheduler = SequentialLR(optimizer, [warmup_sched, cosine_sched], milestones=[cfg.lr_warmup_epochs])
         else:
             scheduler = cosine_sched
+    elif cfg.lr_scheduler == "cosine_multiphase":
+        # Two-phase cosine decay then constant:
+        #   warmup -> cosine(lr -> phase1_min) -> cosine(phase1_min -> phase2_min) -> constant(phase2_min)
+        assert cfg.lr_phase1_end > cfg.lr_warmup_epochs, \
+            f"lr_phase1_end ({cfg.lr_phase1_end}) must be > lr_warmup_epochs ({cfg.lr_warmup_epochs})"
+        assert cfg.lr_phase2_end > cfg.lr_phase1_end, \
+            f"lr_phase2_end ({cfg.lr_phase2_end}) must be > lr_phase1_end ({cfg.lr_phase1_end})"
+        base_lr = cfg.lr
+        p1_end = cfg.lr_phase1_end
+        p2_end = cfg.lr_phase2_end
+        p1_min_factor = cfg.lr_phase1_min / base_lr
+        p2_min_factor = cfg.lr_phase2_min / base_lr
+        warmup_ep = cfg.lr_warmup_epochs
+
+        def _multiphase_lambda(epoch):
+            if epoch < warmup_ep:
+                return 1.0
+            elif epoch < p1_end:
+                t = (epoch - warmup_ep) / max(p1_end - warmup_ep, 1)
+                return p1_min_factor + 0.5 * (1.0 - p1_min_factor) * (1 + math.cos(math.pi * t))
+            elif epoch < p2_end:
+                t = (epoch - p1_end) / max(p2_end - p1_end, 1)
+                return p2_min_factor + 0.5 * (p1_min_factor - p2_min_factor) * (1 + math.cos(math.pi * t))
+            else:
+                return p2_min_factor
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_multiphase_lambda)
+        logger.info(f"Using cosine_multiphase LR: warmup={warmup_ep}, "
+                     f"phase1=[{warmup_ep},{p1_end}) -> {cfg.lr_phase1_min}, "
+                     f"phase2=[{p1_end},{p2_end}) -> {cfg.lr_phase2_min}, "
+                     f"then constant")
     else:
         scheduler = ReduceLROnPlateau(
             optimizer, mode="max", factor=cfg.lr_factor, patience=cfg.lr_patience
@@ -534,7 +569,7 @@ def main():
     for epoch in range(start_epoch, cfg.epochs):
         # Set epoch for Curriculum Negative Mining (if supported by loss function)
         if hasattr(hyp_criterion, 'set_epoch'):
-            hyp_criterion.set_epoch(epoch, cfg.epochs)
+            hyp_criterion.set_epoch(epoch)
 
         # Freeze/unfreeze label embeddings based on epoch
         raw_model = model.module if hasattr(model, 'module') else model
@@ -564,7 +599,7 @@ def main():
         )
 
         # Update scheduler
-        if cfg.lr_scheduler == "cosine":
+        if cfg.lr_scheduler in ("cosine", "cosine_multiphase"):
             scheduler.step()
         else:
             scheduler.step(mean_dice)

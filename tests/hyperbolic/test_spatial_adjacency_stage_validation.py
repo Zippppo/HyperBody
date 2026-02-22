@@ -307,7 +307,7 @@ class TestTask4TrainConfigGraphIntegration:
                 self.register_buffer("tree_dist_matrix", matrix)
                 captured["tree_dist_matrix"] = matrix
 
-            def set_epoch(self, epoch: int, max_epochs: int):
+            def set_epoch(self, epoch: int):
                 return None
 
             def forward(self, voxel_emb, labels, label_emb):

@@ -14,7 +14,7 @@ def test_lorentz_ranking_loss_is_stable_under_cuda_autocast():
         t_end=0.1,
         warmup_epochs=5,
     ).cuda()
-    loss_fn.set_epoch(10, 120)
+    loss_fn.set_epoch(10)
 
     # Large magnitudes stress matrix multiplications used by pairwise distances.
     voxel_emb = torch.randn(1, 32, 4, 4, 4, device='cuda') * 120.0
@@ -45,7 +45,7 @@ def test_lorentz_tree_ranking_loss_is_stable_under_cuda_autocast():
         t_end=0.1,
         warmup_epochs=5,
     ).cuda()
-    loss_fn.set_epoch(10, 120)
+    loss_fn.set_epoch(10)
 
     voxel_emb = torch.randn(1, 32, 4, 4, 4, device='cuda') * 120.0
     labels = torch.randint(0, num_classes, (1, 4, 4, 4), device='cuda')

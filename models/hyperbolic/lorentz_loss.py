@@ -51,6 +51,7 @@ class LorentzRankingLoss(nn.Module):
         t_start: float = 2.0,
         t_end: float = 0.1,
         warmup_epochs: int = 5,
+        curriculum_epochs: int = 50,
     ):
         """
         Args:
@@ -61,6 +62,7 @@ class LorentzRankingLoss(nn.Module):
             t_start: Initial temperature for curriculum sampling (high = more random)
             t_end: Final temperature for curriculum sampling (low = more hard negatives)
             warmup_epochs: Number of epochs to use uniform random sampling before curriculum
+            curriculum_epochs: Total epochs for easy->hard curriculum (decoupled from total training epochs)
         """
         super().__init__()
         self.margin = margin
@@ -70,34 +72,31 @@ class LorentzRankingLoss(nn.Module):
         self.t_start = t_start
         self.t_end = t_end
         self.warmup_epochs = warmup_epochs
+        self.curriculum_epochs = curriculum_epochs
 
-        # Register buffers for epoch tracking (saved/loaded with model state)
+        # Register buffer for epoch tracking (saved/loaded with model state)
         self.register_buffer('current_epoch', torch.tensor(0, dtype=torch.long))
-        self.register_buffer('max_epochs', torch.tensor(100, dtype=torch.long))
 
-    def set_epoch(self, epoch: int, max_epochs: int):
+    def set_epoch(self, epoch: int):
         """Set current epoch for curriculum scheduling."""
         self.current_epoch.fill_(epoch)
-        self.max_epochs.fill_(max_epochs)
 
     def get_temperature(self) -> float:
         """
         Get current temperature for curriculum negative mining.
 
         During warmup (epoch < warmup_epochs): returns t_start
-        After warmup: exponential decay from t_start to t_end
+        After warmup: exponential decay from t_start to t_end over curriculum_epochs
+        After curriculum completes: stays at t_end
         """
         epoch = self.current_epoch.item()
-        max_epochs = self.max_epochs.item()
 
         # During warmup, return t_start
         if epoch < self.warmup_epochs:
             return self.t_start
 
-        # After warmup: exponential decay
-        # progress = (epoch - warmup_epochs) / (max_epochs - warmup_epochs)
-        # clamp progress to [0, 1]
-        progress = (epoch - self.warmup_epochs) / max(max_epochs - self.warmup_epochs, 1)
+        # progress based on fixed curriculum_epochs, not total training epochs
+        progress = (epoch - self.warmup_epochs) / max(self.curriculum_epochs - self.warmup_epochs, 1)
         progress = min(max(progress, 0.0), 1.0)
 
         # t = t_start * (t_end / t_start)^progress
@@ -273,6 +272,7 @@ class LorentzTreeRankingLoss(nn.Module):
         t_start: float = 2.0,
         t_end: float = 0.1,
         warmup_epochs: int = 5,
+        curriculum_epochs: int = 50,
     ):
         """
         Args:
@@ -284,6 +284,7 @@ class LorentzTreeRankingLoss(nn.Module):
             t_start: Initial temperature for curriculum sampling (high = more random)
             t_end: Final temperature for curriculum sampling (low = more hard negatives)
             warmup_epochs: Number of epochs to use uniform random sampling before curriculum
+            curriculum_epochs: Total epochs for easy->hard curriculum (decoupled from total training epochs)
         """
         super().__init__()
         self.margin = margin
@@ -293,37 +294,34 @@ class LorentzTreeRankingLoss(nn.Module):
         self.t_start = t_start
         self.t_end = t_end
         self.warmup_epochs = warmup_epochs
+        self.curriculum_epochs = curriculum_epochs
 
         # Register tree distance matrix as buffer (saved/loaded with model state)
         self.register_buffer('tree_dist_matrix', tree_dist_matrix.float())
 
-        # Register buffers for epoch tracking (saved/loaded with model state)
+        # Register buffer for epoch tracking (saved/loaded with model state)
         self.register_buffer('current_epoch', torch.tensor(0, dtype=torch.long))
-        self.register_buffer('max_epochs', torch.tensor(100, dtype=torch.long))
 
-    def set_epoch(self, epoch: int, max_epochs: int):
+    def set_epoch(self, epoch: int):
         """Set current epoch for curriculum scheduling."""
         self.current_epoch.fill_(epoch)
-        self.max_epochs.fill_(max_epochs)
 
     def get_temperature(self) -> float:
         """
         Get current temperature for curriculum negative mining.
 
         During warmup (epoch < warmup_epochs): returns t_start
-        After warmup: exponential decay from t_start to t_end
+        After warmup: exponential decay from t_start to t_end over curriculum_epochs
+        After curriculum completes: stays at t_end
         """
         epoch = self.current_epoch.item()
-        max_epochs = self.max_epochs.item()
 
         # During warmup, return t_start
         if epoch < self.warmup_epochs:
             return self.t_start
 
-        # After warmup: exponential decay
-        # progress = (epoch - warmup_epochs) / (max_epochs - warmup_epochs)
-        # clamp progress to [0, 1]
-        progress = (epoch - self.warmup_epochs) / max(max_epochs - self.warmup_epochs, 1)
+        # progress based on fixed curriculum_epochs, not total training epochs
+        progress = (epoch - self.warmup_epochs) / max(self.curriculum_epochs - self.warmup_epochs, 1)
         progress = min(max(progress, 0.0), 1.0)
 
         # t = t_start * (t_end / t_start)^progress

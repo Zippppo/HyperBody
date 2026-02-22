@@ -9,6 +9,7 @@ Usage:
     python eval/vis/vis_pred.py --pred_dir eval/pred/L_S_FZ+cls0_0.1 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/L_S_FZ+cls0_0.1/
 
 python eval/vis/vis_pred.py --pred_dir eval/pred/LR-GD-M04-LRP3 --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/0209-LR-GD-M04-LRP3/
+python eval/vis/vis_pred.py --pred_dir eval/pred/vis_best --gt_dir Dataset/voxel_data --compare --output_dir docs/visualizations/pred_vis/vis_best
 
 
 """

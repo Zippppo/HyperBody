@@ -34,6 +34,7 @@ class Config:
     hyp_t_start: float = 2.0      # Initial temperature (high = random)
     hyp_t_end: float = 0.1        # Final temperature (low = hard negatives)
     hyp_warmup_epochs: int = 6    # Pure random sampling for first N epochs
+    hyp_curriculum_epochs: int = 50  # Epochs for full easy->hard curriculum (decoupled from total epochs)
     hyp_min_radius: float = 0.1   # Shallow organ init norm
     hyp_max_radius: float = 2.0   # Deep organ init norm
     hyp_direction_mode: str = "random"  # "random" or "semantic"
@@ -68,11 +69,16 @@ class Config:
     hyp_weight: float = 0.05      # Loss weight
 
     # LR scheduler
-    lr_scheduler: str = "cosine"       # "plateau" or "cosine"
+    lr_scheduler: str = "cosine"       # "plateau", "cosine", or "cosine_multiphase"
     lr_patience: int = 10               # plateau only
     lr_factor: float = 0.5              # plateau only
     lr_warmup_epochs: int = 4           # cosine only: linear warmup epochs
     lr_eta_min: float = 1e-6            # cosine only: minimum LR
+    # cosine_multiphase: two-phase cosine decay then constant
+    lr_phase1_end: int = 0              # end epoch for phase 1 (0 = disabled)
+    lr_phase1_min: float = 1e-6         # min LR at end of phase 1
+    lr_phase2_end: int = 0              # end epoch for phase 2
+    lr_phase2_min: float = 1e-8         # min LR at end of phase 2, then constant
 
     # Checkpoint
     checkpoint_dir: str = ""

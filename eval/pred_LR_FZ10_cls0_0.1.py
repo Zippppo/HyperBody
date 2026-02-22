@@ -9,6 +9,8 @@ Usage:
     python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.1.yaml --ckpt checkpoints/L_R_FZ+cls0_0.1/best.pth
     python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.1.yaml --ckpt epoch_30.pth
     python eval/pred_LR_FZ10_cls0_0.1.py --config configs/L_R_FZ+cls0_0.1.yaml --output eval/pred/L_R_FZ+cls0_0.1
+    python eval/pred_LR_FZ10_cls0_0.1.py --config configs/021201.yaml --ckpt checkpoints/021201/best.pth --output eval/pred/021201
+    python eval/pred_LR_FZ10_cls0_0.1.py     --config configs/tree.yaml     --ckpt checkpoints/tree/tree-best.pth     --output eval/pred/TreeDistance
 """
 import argparse
 import json

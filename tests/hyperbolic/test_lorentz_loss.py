@@ -114,23 +114,22 @@ class TestCurriculumNegativeMining:
             t_start=2.0,
             t_end=0.1,
             warmup_epochs=5,
+            curriculum_epochs=30,
         )
 
-        max_epochs = 30
-
         # During warmup (epoch < 5), temperature should be t_start
-        loss_fn.set_epoch(0, max_epochs)
+        loss_fn.set_epoch(0)
         temp = loss_fn.get_temperature()
         assert temp == 2.0, f"Expected t_start=2.0 during warmup, got {temp}"
 
-        loss_fn.set_epoch(4, max_epochs)
+        loss_fn.set_epoch(4)
         temp = loss_fn.get_temperature()
         assert temp == 2.0, f"Expected t_start=2.0 at epoch 4 (still warmup), got {temp}"
 
     def test_temperature_exponential_decay(self):
         """
         Test exponential temperature decay: t = t_start * (t_end/t_start)^progress
-        where progress = (epoch - warmup_epochs) / (max_epochs - warmup_epochs)
+        where progress = (epoch - warmup_epochs) / (curriculum_epochs - warmup_epochs)
         """
         from models.hyperbolic.lorentz_loss import LorentzRankingLoss
 
@@ -139,26 +138,26 @@ class TestCurriculumNegativeMining:
             t_start=2.0,
             t_end=0.1,
             warmup_epochs=5,
+            curriculum_epochs=30,
         )
 
-        max_epochs = 30
         # After warmup: epochs 5 to 29
-        # effective_epochs = max_epochs - warmup_epochs = 25
+        # effective_epochs = curriculum_epochs - warmup_epochs = 25
 
         # At epoch 5 (start of curriculum): progress = 0, t = 2.0
-        loss_fn.set_epoch(5, max_epochs)
+        loss_fn.set_epoch(5)
         temp = loss_fn.get_temperature()
         assert abs(temp - 2.0) < 1e-6, f"At epoch 5, expected 2.0, got {temp}"
 
         # At epoch 30 (end): progress = 1, t = 0.1
-        loss_fn.set_epoch(29, max_epochs)
+        loss_fn.set_epoch(29)
         temp = loss_fn.get_temperature()
         # progress = (29 - 5) / (30 - 5) = 24/25 = 0.96
         expected_temp = 2.0 * (0.1 / 2.0) ** 0.96
         assert abs(temp - expected_temp) < 1e-5, f"At epoch 29, expected ~{expected_temp:.4f}, got {temp}"
 
         # At mid-point: epoch 17 (progress = 0.5)
-        loss_fn.set_epoch(17, max_epochs)
+        loss_fn.set_epoch(17)
         temp = loss_fn.get_temperature()
         # progress = (17 - 5) / 25 = 12/25 = 0.48
         expected_temp = 2.0 * (0.1 / 2.0) ** 0.48
@@ -166,7 +165,7 @@ class TestCurriculumNegativeMining:
 
     def test_temperature_clamps_at_boundaries(self):
         """
-        Test that temperature is properly clamped when epoch exceeds max_epochs.
+        Test that temperature is properly clamped when epoch exceeds curriculum_epochs.
         Progress should be clamped to [0, 1].
         """
         from models.hyperbolic.lorentz_loss import LorentzRankingLoss
@@ -176,12 +175,11 @@ class TestCurriculumNegativeMining:
             t_start=2.0,
             t_end=0.1,
             warmup_epochs=5,
+            curriculum_epochs=30,
         )
 
-        max_epochs = 30
-
-        # epoch > max_epochs should clamp to t_end
-        loss_fn.set_epoch(100, max_epochs)
+        # epoch > curriculum_epochs should clamp to t_end
+        loss_fn.set_epoch(100)
         temp = loss_fn.get_temperature()
         assert abs(temp - 0.1) < 1e-6, f"Epoch 100 should clamp to t_end=0.1, got {temp}"
 
@@ -205,10 +203,8 @@ class TestCurriculumNegativeMining:
             num_negatives=8,
         )
 
-        max_epochs = 30
-
         # Set to warmup period
-        loss_fn.set_epoch(2, max_epochs)
+        loss_fn.set_epoch(2)
 
         # Create data where classes have very different distances
         # This setup would cause non-uniform sampling if distance-weighted
@@ -226,8 +222,8 @@ class TestCurriculumNegativeMining:
 
     def test_buffers_are_registered(self):
         """
-        current_epoch and max_epochs should be registered as buffers,
-        making them part of state_dict for saving/loading.
+        current_epoch should be registered as a buffer,
+        making it part of state_dict for saving/loading.
         """
         from models.hyperbolic.lorentz_loss import LorentzRankingLoss
 
@@ -240,18 +236,14 @@ class TestCurriculumNegativeMining:
 
         # Check buffers exist
         assert hasattr(loss_fn, 'current_epoch'), "current_epoch buffer not found"
-        assert hasattr(loss_fn, 'max_epochs'), "max_epochs buffer not found"
 
         # Check they are tensors (buffers)
         assert isinstance(loss_fn.current_epoch, torch.Tensor), \
             "current_epoch should be a Tensor buffer"
-        assert isinstance(loss_fn.max_epochs, torch.Tensor), \
-            "max_epochs should be a Tensor buffer"
 
         # Check they appear in state_dict
         state_dict = loss_fn.state_dict()
         assert 'current_epoch' in state_dict, "current_epoch not in state_dict"
-        assert 'max_epochs' in state_dict, "max_epochs not in state_dict"
 
     def test_buffer_save_load(self):
         """
@@ -269,7 +261,7 @@ class TestCurriculumNegativeMining:
         )
 
         # Set epoch state
-        loss_fn.set_epoch(15, 30)
+        loss_fn.set_epoch(15)
 
         # Save
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pt') as f:
@@ -289,8 +281,6 @@ class TestCurriculumNegativeMining:
             # Verify state was restored
             assert loss_fn2.current_epoch.item() == 15, \
                 f"Expected current_epoch=15, got {loss_fn2.current_epoch.item()}"
-            assert loss_fn2.max_epochs.item() == 30, \
-                f"Expected max_epochs=30, got {loss_fn2.max_epochs.item()}"
 
             # Temperature should match
             temp1 = loss_fn.get_temperature()
@@ -321,7 +311,7 @@ class TestCurriculumNegativeMining:
             num_negatives=4,
         )
 
-        loss_fn.set_epoch(10, 30)  # Past warmup, low temperature
+        loss_fn.set_epoch(10)  # Past warmup, low temperature
 
         # Create minimal test case
         torch.manual_seed(123)
@@ -366,7 +356,7 @@ class TestCurriculumNegativeMining:
             num_negatives=4,
         )
 
-        loss_fn.set_epoch(0, 30)  # In warmup
+        loss_fn.set_epoch(0)  # In warmup
 
         # Create data with deliberately skewed distances
         torch.manual_seed(42)
@@ -398,12 +388,11 @@ class TestCurriculumNegativeMining:
             t_start=2.0,
             t_end=0.1,
             warmup_epochs=5,
+            curriculum_epochs=30,
             num_samples_per_class=32,
             num_negatives=4,
         )
-
-        # Set to end of training (low temperature)
-        loss_fn.set_epoch(29, 30)
+        loss_fn.set_epoch(29)
         temp = loss_fn.get_temperature()
         assert temp < 0.2, f"Temperature should be low at epoch 29, got {temp}"
 
@@ -432,6 +421,7 @@ class TestCurriculumNegativeMining:
             t_start=2.0,
             t_end=0.1,
             warmup_epochs=5,
+            curriculum_epochs=30,
             num_samples_per_class=16,
             num_negatives=4,
         )
@@ -446,7 +436,7 @@ class TestCurriculumNegativeMining:
         losses = []
 
         for epoch in range(max_epochs):
-            loss_fn.set_epoch(epoch, max_epochs)
+            loss_fn.set_epoch(epoch)
             temp = loss_fn.get_temperature()
             temperatures.append(temp)
 
@@ -624,26 +614,25 @@ class TestLorentzTreeRankingLoss:
             t_start=2.0,
             t_end=0.1,
             warmup_epochs=5,
+            curriculum_epochs=30,
         )
 
-        max_epochs = 30
-
         # During warmup (epoch < 5), temperature should be t_start
-        loss_fn.set_epoch(0, max_epochs)
+        loss_fn.set_epoch(0)
         temp = loss_fn.get_temperature()
         assert temp == 2.0, f"Expected t_start=2.0 during warmup, got {temp}"
 
-        loss_fn.set_epoch(4, max_epochs)
+        loss_fn.set_epoch(4)
         temp = loss_fn.get_temperature()
         assert temp == 2.0, f"Expected t_start=2.0 at epoch 4 (still warmup), got {temp}"
 
         # At epoch 5 (start of curriculum): progress = 0, t = 2.0
-        loss_fn.set_epoch(5, max_epochs)
+        loss_fn.set_epoch(5)
         temp = loss_fn.get_temperature()
         assert abs(temp - 2.0) < 1e-6, f"At epoch 5, expected 2.0, got {temp}"
 
         # At final epoch, temperature should be close to t_end
-        loss_fn.set_epoch(29, max_epochs)
+        loss_fn.set_epoch(29)
         temp = loss_fn.get_temperature()
         assert temp < 0.2, f"At final epoch, temp should be close to t_end, got {temp}"
 
@@ -667,10 +656,8 @@ class TestLorentzTreeRankingLoss:
             num_negatives=8,
         )
 
-        max_epochs = 30
-
         # Set to warmup period
-        loss_fn.set_epoch(2, max_epochs)
+        loss_fn.set_epoch(2)
 
         torch.manual_seed(42)
         num_classes = tree_dist_matrix.shape[0]
@@ -709,7 +696,7 @@ class TestLorentzTreeRankingLoss:
             num_negatives=4,
         )
 
-        loss_fn.set_epoch(10, 30)  # Past warmup, low temperature
+        loss_fn.set_epoch(10)  # Past warmup, low temperature
 
         torch.manual_seed(123)
         num_classes = custom_matrix.shape[0]
@@ -764,22 +751,18 @@ class TestLorentzTreeRankingLoss:
 
         # Check buffers exist
         assert hasattr(loss_fn, 'current_epoch'), "current_epoch buffer not found"
-        assert hasattr(loss_fn, 'max_epochs'), "max_epochs buffer not found"
 
         # Check they are tensors (buffers)
         assert isinstance(loss_fn.current_epoch, torch.Tensor), \
             "current_epoch should be a Tensor buffer"
-        assert isinstance(loss_fn.max_epochs, torch.Tensor), \
-            "max_epochs should be a Tensor buffer"
 
         # Check they appear in state_dict
         state_dict = loss_fn.state_dict()
         assert 'current_epoch' in state_dict, "current_epoch not in state_dict"
-        assert 'max_epochs' in state_dict, "max_epochs not in state_dict"
 
     def test_buffer_save_load(self, tree_dist_matrix):
         """
-        Test that all buffers (tree_dist_matrix, current_epoch, max_epochs)
+        Test that all buffers (tree_dist_matrix, current_epoch)
         survive save/load cycle.
         """
         from models.hyperbolic.lorentz_loss import LorentzTreeRankingLoss
@@ -795,7 +778,7 @@ class TestLorentzTreeRankingLoss:
         )
 
         # Set epoch state
-        loss_fn.set_epoch(15, 30)
+        loss_fn.set_epoch(15)
 
         # Save
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pt') as f:
@@ -817,8 +800,6 @@ class TestLorentzTreeRankingLoss:
             # Verify state was restored
             assert loss_fn2.current_epoch.item() == 15, \
                 f"Expected current_epoch=15, got {loss_fn2.current_epoch.item()}"
-            assert loss_fn2.max_epochs.item() == 30, \
-                f"Expected max_epochs=30, got {loss_fn2.max_epochs.item()}"
 
             # tree_dist_matrix should be restored
             assert torch.allclose(loss_fn2.tree_dist_matrix, tree_dist_matrix), \
@@ -863,7 +844,7 @@ class TestLorentzTreeRankingLoss:
             num_negatives=4,
         )
 
-        loss_fn.set_epoch(10, 30)
+        loss_fn.set_epoch(10)
 
         torch.manual_seed(42)
         # Create embeddings where hyperbolic distances are OPPOSITE to tree distances
@@ -935,6 +916,7 @@ class TestLorentzTreeRankingLoss:
             t_start=2.0,
             t_end=0.1,
             warmup_epochs=5,
+            curriculum_epochs=30,
             num_samples_per_class=16,
             num_negatives=4,
         )
@@ -950,7 +932,7 @@ class TestLorentzTreeRankingLoss:
         losses = []
 
         for epoch in range(max_epochs):
-            loss_fn.set_epoch(epoch, max_epochs)
+            loss_fn.set_epoch(epoch)
             temp = loss_fn.get_temperature()
             temperatures.append(temp)
 

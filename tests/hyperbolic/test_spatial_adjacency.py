@@ -453,7 +453,7 @@ class TestGraphDistanceIntegration:
             num_samples_per_class=16,
             num_negatives=3,
         )
-        loss_fn.set_epoch(10, 100)
+        loss_fn.set_epoch(10)
 
         B, C, D, H, W = 1, embed_dim, 4, 4, 4
         voxel_tangent = torch.randn(B, C, D, H, W) * 0.3
